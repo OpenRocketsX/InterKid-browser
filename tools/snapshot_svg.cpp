@@ -1,5 +1,8 @@
-// snapshot_svg.cpp - URL/file visual snapshot from real layout tree.
-// Writes an SVG approximation: backgrounds, borders, text fragments, image boxes.
+// snapshot_svg.cpp - URL/file visual snapshot from the real layout tree.
+//
+// Writes an SVG approximation containing backgrounds, borders, text fragments,
+// and replaced-element placeholders. This tool intentionally does not render
+// actual image content or execute JavaScript.
 #include "css/stylesheet.h"
 #include "html/parser.h"
 #include "layout/layout_engine.h"
@@ -9,155 +12,540 @@
 #include "platform/browser_core.h"
 
 #include <algorithm>
+#include <cerrno>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
-#include <functional>
+#include <ostream>
 #include <sstream>
 #include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
 
-struct SvgMeasure : ITextMeasure {
-    float MeasureText(const std::wstring& s, const FontKey& f) override { return (float)s.size() * f.size * 0.5f; }
-    float SpaceWidth(const FontKey& f) override { return f.size * 0.3f; }
-    bool ImageIntrinsic(const std::string&, float& w, float& h) override { w = 0; h = 0; return false; }
+namespace {
+
+struct SvgMeasure final : ITextMeasure {
+    float MeasureText(const std::wstring& text, const FontKey& font) override {
+        return static_cast<float>(text.size()) * font.size * 0.5f;
+    }
+
+    float SpaceWidth(const FontKey& font) override {
+        return font.size * 0.3f;
+    }
+
+    bool ImageIntrinsic(const std::string&, float& width, float& height) override {
+        width = 0.0f;
+        height = 0.0f;
+        return false;
+    }
+
     void RequestImage(const std::string&) override {}
 };
 
-static std::string UrlDecode(const std::string& s) {
-    std::string o;
-    for (size_t i = 0; i < s.size(); ++i) {
-        if (s[i] == '%' && i + 2 < s.size()) {
-            auto hx = [](char c) { if (c >= '0' && c <= '9') return c - '0'; c = (char)std::tolower((unsigned char)c); return 10 + (c - 'a'); };
-            o += (char)(hx(s[i + 1]) * 16 + hx(s[i + 2]));
-            i += 2;
-        } else o += s[i];
+int HexValue(char ch) {
+    if (ch >= '0' && ch <= '9') {
+        return ch - '0';
     }
-    return o;
+    if (ch >= 'a' && ch <= 'f') {
+        return ch - 'a' + 10;
+    }
+    if (ch >= 'A' && ch <= 'F') {
+        return ch - 'A' + 10;
+    }
+    return -1;
 }
 
-static Stylesheet CollectCss(const Node* root) {
+bool UrlDecode(std::string_view input, std::string& output) {
+    output.clear();
+    output.reserve(input.size());
+
+    for (size_t i = 0; i < input.size(); ++i) {
+        if (input[i] != '%') {
+            output += input[i];
+            continue;
+        }
+
+        if (i + 2 >= input.size()) {
+            return false;
+        }
+
+        const int high = HexValue(input[i + 1]);
+        const int low = HexValue(input[i + 2]);
+
+        if (high < 0 || low < 0) {
+            return false;
+        }
+
+        output += static_cast<char>((high << 4) | low);
+        i += 2;
+    }
+
+    return true;
+}
+
+std::string ToLowerAscii(std::string_view input) {
+    std::string output;
+    output.reserve(input.size());
+
+    for (const unsigned char ch : input) {
+        output += static_cast<char>(std::tolower(ch));
+    }
+
+    return output;
+}
+
+bool ExtractDataCss(std::string_view href, std::string& css) {
+    constexpr std::string_view dataPrefix = "data:";
+    constexpr std::string_view cssMimeType = "text/css";
+
+    if (href.size() < dataPrefix.size() ||
+        ToLowerAscii(href.substr(0, dataPrefix.size())) != dataPrefix) {
+        return false;
+    }
+
+    const size_t comma = href.find(',');
+    if (comma == std::string_view::npos) {
+        return false;
+    }
+
+    const std::string metadata = ToLowerAscii(
+        href.substr(dataPrefix.size(), comma - dataPrefix.size()));
+
+    const size_t semicolon = metadata.find(';');
+    const std::string_view mediaType = std::string_view(metadata).substr(
+        0,
+        semicolon == std::string::npos ? metadata.size() : semicolon);
+
+    if (mediaType != cssMimeType) {
+        return false;
+    }
+
+    if (metadata.find(";base64") != std::string::npos) {
+        std::fprintf(stderr,
+                     "snapshot_svg: base64 data stylesheets are not supported\n");
+        return false;
+    }
+
+    if (!UrlDecode(href.substr(comma + 1), css)) {
+        std::fprintf(stderr,
+                     "snapshot_svg: ignoring malformed percent-encoded stylesheet URL\n");
+        return false;
+    }
+
+    return true;
+}
+
+void AppendStylesheet(Stylesheet& destination, Stylesheet source) {
+    if (source.rootRemBaseSet) {
+        destination.rootRemBase = source.rootRemBase;
+        destination.rootRemBaseSet = true;
+    }
+
+    for (auto& rule : source.rules) {
+        destination.rules.push_back(std::move(rule));
+    }
+}
+
+Stylesheet CollectCss(const Node* root) {
     Stylesheet sheet;
-    std::function<void(const Node*)> walk = [&](const Node* n) {
-        if (!n) return;
-        if (n->type == NodeType::Element && n->tagName == "style") {
+
+    if (!root) {
+        return sheet;
+    }
+
+    std::vector<const Node*> stack{root};
+
+    while (!stack.empty()) {
+        const Node* node = stack.back();
+        stack.pop_back();
+
+        if (!node) {
+            continue;
+        }
+
+        if (node->type == NodeType::Element && node->tagName == "style") {
             std::string css;
-            for (auto& c : n->children) if (c->type == NodeType::Text) css += c->text;
-            auto part = ParseStylesheet(css);
-            if (part.rootRemBaseSet) { sheet.rootRemBase = part.rootRemBase; sheet.rootRemBaseSet = true; }
-            for (auto& r : part.rules) sheet.rules.push_back(r);
-        } else if (n->type == NodeType::Element && n->tagName == "link") {
-            std::string rel = n->attr("rel"), low;
-            for (char c : rel) low += (char)std::tolower((unsigned char)c);
-            if (low.find("stylesheet") != std::string::npos) {
-                const std::string pfx = "data:text/css,";
-                std::string href = n->attr("href");
-                if (href.rfind(pfx, 0) == 0) {
-                    auto part = ParseStylesheet(UrlDecode(href.substr(pfx.size())));
-                    if (part.rootRemBaseSet) { sheet.rootRemBase = part.rootRemBase; sheet.rootRemBaseSet = true; }
-                    for (auto& r : part.rules) sheet.rules.push_back(r);
+
+            for (const auto& child : node->children) {
+                if (child && child->type == NodeType::Text) {
+                    css += child->text;
+                }
+            }
+
+            AppendStylesheet(sheet, ParseStylesheet(css));
+        } else if (node->type == NodeType::Element && node->tagName == "link") {
+            const std::string rel = ToLowerAscii(node->attr("rel"));
+
+            if (rel.find("stylesheet") != std::string::npos) {
+                std::string css;
+
+                if (ExtractDataCss(node->attr("href"), css)) {
+                    AppendStylesheet(sheet, ParseStylesheet(css));
                 }
             }
         }
-        for (auto& c : n->children) walk(c.get());
-    };
-    walk(root);
+
+        for (auto it = node->children.rbegin(); it != node->children.rend(); ++it) {
+            if (*it) {
+                stack.push_back(it->get());
+            }
+        }
+    }
+
     sheet.rebuildRuleBuckets();
     return sheet;
 }
 
-static std::string Esc(const std::wstring& w) {
-    std::string out;
-    for (wchar_t ch : w) {
-        unsigned int c = (unsigned int)ch;
-        if (c == '&') out += "&amp;";
-        else if (c == '<') out += "&lt;";
-        else if (c == '>') out += "&gt;";
-        else if (c == '"') out += "&quot;";
-        else if (c >= 32 && c < 127) out += (char)c;
-        else { char buf[32]; snprintf(buf, sizeof buf, "&#%u;", c); out += buf; }
+void AppendXmlCodePoint(std::string& output, unsigned int codePoint) {
+    if (codePoint == '&') {
+        output += "&amp;";
+    } else if (codePoint == '<') {
+        output += "&lt;";
+    } else if (codePoint == '>') {
+        output += "&gt;";
+    } else if (codePoint == '"') {
+        output += "&quot;";
+    } else if (codePoint >= 32 &&
+               codePoint != 127 &&
+               codePoint <= 0x10FFFF) {
+        char buffer[32];
+        std::snprintf(buffer, sizeof(buffer), "&#%u;", codePoint);
+        output += buffer;
     }
-    return out;
 }
 
-static std::string Color(const CssColor& c) {
-    int r = std::clamp((int)(c.r * 255.f + 0.5f), 0, 255);
-    int g = std::clamp((int)(c.g * 255.f + 0.5f), 0, 255);
-    int b = std::clamp((int)(c.b * 255.f + 0.5f), 0, 255);
-    char buf[64];
-    if (c.a < 0.999f) snprintf(buf, sizeof buf, "rgba(%d,%d,%d,%.3f)", r, g, b, c.a);
-    else snprintf(buf, sizeof buf, "#%02x%02x%02x", r, g, b);
-    return buf;
-}
+std::string EscapeXml(const std::wstring& text) {
+    std::string output;
 
-static void Rect(std::ostream& out, float x, float y, float w, float h, const std::string& fill, const std::string& stroke = {}, float sw = 0) {
-    if (w <= 0 || h <= 0) return;
-    out << "<rect x=\"" << x << "\" y=\"" << y << "\" width=\"" << w << "\" height=\"" << h
-        << "\" fill=\"" << fill << "\"";
-    if (!stroke.empty() && sw > 0) out << " stroke=\"" << stroke << "\" stroke-width=\"" << sw << "\"";
-    out << "/>\n";
-}
+    for (size_t i = 0; i < text.size(); ++i) {
+        unsigned int codePoint = static_cast<unsigned int>(text[i]);
 
-static void PaintSvg(const LayoutBox& b, std::ostream& out) {
-    if (b.style.visibilityHidden) return;
-    if (b.style.bgColor.valid && b.style.bgColor.a > 0.001f)
-        Rect(out, b.x, b.y, b.borderBoxW(), b.borderBoxH(), Color(b.style.bgColor));
-    float bw = std::max(std::max(b.borderTop, b.borderRight), std::max(b.borderBottom, b.borderLeft));
-    if (bw > 0)
-        Rect(out, b.x, b.y, b.borderBoxW(), b.borderBoxH(), "none", Color(b.style.borderColor.valid ? b.style.borderColor : CssColor{true,0,0,0,1}), bw);
-    if (b.kind == BoxKind::Replaced || (!b.replacedUrl.empty() && b.kids.empty())) {
-        Rect(out, b.x, b.y, b.borderBoxW(), b.borderBoxH(), "#f3f4f6", "#cbd5e1", 1);
+        if constexpr (sizeof(wchar_t) == 2) {
+            const bool isHighSurrogate =
+                codePoint >= 0xD800 && codePoint <= 0xDBFF;
+
+            if (isHighSurrogate && i + 1 < text.size()) {
+                const unsigned int low =
+                    static_cast<unsigned int>(text[i + 1]);
+
+                if (low >= 0xDC00 && low <= 0xDFFF) {
+                    codePoint = 0x10000 +
+                                ((codePoint - 0xD800) << 10) +
+                                (low - 0xDC00);
+                    ++i;
+                } else {
+                    codePoint = 0xFFFD;
+                }
+            } else if (codePoint >= 0xD800 && codePoint <= 0xDFFF) {
+                codePoint = 0xFFFD;
+            }
+        }
+
+        AppendXmlCodePoint(output, codePoint);
     }
-    for (const auto& line : b.lines) {
-        for (const auto& frag : line.frags) {
-            if (frag.text.empty()) continue;
-            CssColor color = frag.src ? frag.src->style.color : b.style.color;
-            if (!color.valid) color = {true,0,0,0,1};
-            float size = frag.src && frag.src->style.fontSize > 0 ? frag.src->style.fontSize : 16.f;
-            out << "<text x=\"" << frag.x << "\" y=\"" << (frag.y + frag.baseline)
-                << "\" font-size=\"" << size << "\" fill=\"" << Color(color) << "\">"
-                << Esc(frag.text) << "</text>\n";
+
+    return output;
+}
+
+std::string Color(const CssColor& color) {
+    const int red = std::clamp(
+        static_cast<int>(color.r * 255.0f + 0.5f), 0, 255);
+    const int green = std::clamp(
+        static_cast<int>(color.g * 255.0f + 0.5f), 0, 255);
+    const int blue = std::clamp(
+        static_cast<int>(color.b * 255.0f + 0.5f), 0, 255);
+
+    char buffer[64];
+
+    if (color.a < 0.999f) {
+        std::snprintf(buffer, sizeof(buffer),
+                      "rgba(%d,%d,%d,%.3f)",
+                      red, green, blue,
+                      std::clamp(color.a, 0.0f, 1.0f));
+    } else {
+        std::snprintf(buffer, sizeof(buffer),
+                      "#%02x%02x%02x",
+                      red, green, blue);
+    }
+
+    return buffer;
+}
+
+bool ValidSvgNumber(float value) {
+    return std::isfinite(value);
+}
+
+void Rect(std::ostream& output,
+          float x,
+          float y,
+          float width,
+          float height,
+          const std::string& fill,
+          const std::string& stroke = {},
+          float strokeWidth = 0.0f) {
+    if (width <= 0.0f || height <= 0.0f ||
+        !ValidSvgNumber(x) || !ValidSvgNumber(y) ||
+        !ValidSvgNumber(width) || !ValidSvgNumber(height)) {
+        return;
+    }
+
+    output << "<rect x=\"" << x
+           << "\" y=\"" << y
+           << "\" width=\"" << width
+           << "\" height=\"" << height
+           << "\" fill=\"" << fill << "\"";
+
+    if (!stroke.empty() && strokeWidth > 0.0f &&
+        ValidSvgNumber(strokeWidth)) {
+        output << " stroke=\"" << stroke
+               << "\" stroke-width=\"" << strokeWidth << "\"";
+    }
+
+    output << "/>\n";
+}
+
+void PaintBox(const LayoutBox& box, std::ostream& output) {
+    if (box.style.bgColor.valid && box.style.bgColor.a > 0.001f) {
+        Rect(output,
+             box.x,
+             box.y,
+             box.borderBoxW(),
+             box.borderBoxH(),
+             Color(box.style.bgColor));
+    }
+
+    const float borderWidth = std::max(
+        std::max(box.borderTop, box.borderRight),
+        std::max(box.borderBottom, box.borderLeft));
+
+    if (borderWidth > 0.0f) {
+        const CssColor borderColor =
+            box.style.borderColor.valid
+                ? box.style.borderColor
+                : CssColor{true, 0.0f, 0.0f, 0.0f, 1.0f};
+
+        Rect(output,
+             box.x,
+             box.y,
+             box.borderBoxW(),
+             box.borderBoxH(),
+             "none",
+             Color(borderColor),
+             borderWidth);
+    }
+
+    if (box.kind == BoxKind::Replaced ||
+        (!box.replacedUrl.empty() && box.kids.empty())) {
+        Rect(output,
+             box.x,
+             box.y,
+             box.borderBoxW(),
+             box.borderBoxH(),
+             "#f3f4f6",
+             "#cbd5e1",
+             1.0f);
+    }
+
+    for (const auto& line : box.lines) {
+        for (const auto& fragment : line.frags) {
+            if (fragment.text.empty()) {
+                continue;
+            }
+
+            CssColor textColor =
+                fragment.src ? fragment.src->style.color : box.style.color;
+
+            if (!textColor.valid) {
+                textColor = {true, 0.0f, 0.0f, 0.0f, 1.0f};
+            }
+
+            const float fontSize =
+                fragment.src && fragment.src->style.fontSize > 0.0f
+                    ? fragment.src->style.fontSize
+                    : 16.0f;
+
+            const float textY = fragment.y + fragment.baseline;
+
+            if (!ValidSvgNumber(fragment.x) ||
+                !ValidSvgNumber(textY) ||
+                !ValidSvgNumber(fontSize)) {
+                continue;
+            }
+
+            output << "<text x=\"" << fragment.x
+                   << "\" y=\"" << textY
+                   << "\" font-size=\"" << fontSize
+                   << "\" fill=\"" << Color(textColor)
+                   << "\">"
+                   << EscapeXml(fragment.text)
+                   << "</text>\n";
         }
     }
-    for (const auto& k : b.kids) PaintSvg(*k, out);
 }
 
+void PaintSvg(const LayoutBox& root, std::ostream& output) {
+    std::vector<const LayoutBox*> stack{&root};
+
+    while (!stack.empty()) {
+        const LayoutBox* box = stack.back();
+        stack.pop_back();
+
+        if (!box || box->style.visibilityHidden) {
+            continue;
+        }
+
+        PaintBox(*box, output);
+
+        for (auto it = box->kids.rbegin(); it != box->kids.rend(); ++it) {
+            if (*it) {
+                stack.push_back(it->get());
+            }
+        }
+    }
+}
+
+bool ParseDimension(const char* text, float& output) {
+    char* end = nullptr;
+    errno = 0;
+
+    const float value = std::strtof(text, &end);
+
+    if (errno != 0 || end == text || *end != '\0' ||
+        !std::isfinite(value) || value <= 0.0f) {
+        return false;
+    }
+
+    output = value;
+    return true;
+}
+
+} // namespace
+
 int main(int argc, char** argv) {
-    if (argc < 3) {
-        fprintf(stderr, "usage: snapshot_svg file.html|url out.svg [width] [height]\n");
+    if (argc < 3 || argc > 5) {
+        std::fprintf(stderr,
+                     "Usage: %s <file.html|url> <out.svg> [width] [height]\n",
+                     argv[0]);
         return 1;
     }
-    const std::string source = argv[1];
-    const std::string outPath = argv[2];
-    const float width = argc > 3 ? (float)atoi(argv[3]) : 1200.f;
-    const float height = argc > 4 ? (float)atoi(argv[4]) : 800.f;
-    std::string html, baseUrl;
-    if (HasUrlScheme(source)) {
-        FetchResult res = FetchResourceCached(source, 12 * 1024 * 1024, ResourceKind::Document);
-        if (!res.success) { fprintf(stderr, "fetch failed: %s\n", res.error.c_str()); return 2; }
-        html = DecodeTextToUtf8(res.body, res.contentType);
-        baseUrl = res.finalUrl.empty() ? source : res.finalUrl;
-    } else {
-        std::ifstream f(source, std::ios::binary);
-        if (!f) { fprintf(stderr, "open failed: %s\n", source.c_str()); return 2; }
-        std::stringstream ss; ss << f.rdbuf(); html = ss.str();
+
+    float width = 1200.0f;
+    float height = 800.0f;
+
+    if (argc >= 4 && !ParseDimension(argv[3], width)) {
+        std::fprintf(stderr, "Invalid width: %s\n", argv[3]);
+        return 1;
     }
-    auto dom = ParseHtml(html);
-    if (!baseUrl.empty()) LoadExternalStylesheets(dom, baseUrl);
+
+    if (argc == 5 && !ParseDimension(argv[4], height)) {
+        std::fprintf(stderr, "Invalid height: %s\n", argv[4]);
+        return 1;
+    }
+
+    const std::string source = argv[1];
+    const std::string outputPath = argv[2];
+
+    std::string html;
+    std::string baseUrl;
+
+    if (HasUrlScheme(source)) {
+        const FetchResult result = FetchResourceCached(
+            source,
+            12 * 1024 * 1024,
+            ResourceKind::Document);
+
+        if (!result.success) {
+            std::fprintf(stderr, "Fetch failed: %s\n", result.error.c_str());
+            return 2;
+        }
+
+        html = DecodeTextToUtf8(result.body, result.contentType);
+        baseUrl = result.finalUrl.empty() ? source : result.finalUrl;
+    } else {
+        std::ifstream file(source, std::ios::binary);
+
+        if (!file) {
+            std::fprintf(stderr, "Unable to open: %s\n", source.c_str());
+            return 2;
+        }
+
+        std::ostringstream buffer;
+        buffer << file.rdbuf();
+
+        if (file.bad()) {
+            std::fprintf(stderr, "Failed while reading: %s\n", source.c_str());
+            return 2;
+        }
+
+        html = buffer.str();
+    }
+
+    const auto dom = ParseHtml(html);
+
+    if (!dom) {
+        std::fprintf(stderr, "HTML parsing produced no document\n");
+        return 3;
+    }
+
+    if (!baseUrl.empty()) {
+        LoadExternalStylesheets(dom, baseUrl);
+    }
+
     Stylesheet sheet = CollectCss(dom.get());
     sheet.setViewport(width, height);
+
     SvgMeasure measure;
-    LayoutInput in;
-    in.document = dom.get(); in.sheet = &sheet; in.measure = &measure;
-    in.viewportW = width; in.viewportH = height; in.zoom = 1.f; in.baseUrl = baseUrl;
-    auto root = LayoutDocument(in);
-    if (!root) return 3;
-    std::ofstream out(outPath, std::ios::binary);
-    if (!out) { fprintf(stderr, "write failed: %s\n", outPath.c_str()); return 4; }
-    out << "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"" << width << "\" height=\"" << height
-        << "\" viewBox=\"0 0 " << width << " " << height << "\">\n";
-    out << "<rect width=\"100%\" height=\"100%\" fill=\"white\"/>\n";
-    PaintSvg(*root, out);
-    out << "</svg>\n";
-    printf("wrote %s\n", outPath.c_str());
+
+    LayoutInput input;
+    input.document = dom.get();
+    input.sheet = &sheet;
+    input.measure = &measure;
+    input.viewportW = width;
+    input.viewportH = height;
+    input.zoom = 1.0f;
+    input.baseUrl = baseUrl;
+
+    const auto root = LayoutDocument(input);
+
+    if (!root) {
+        std::fprintf(stderr, "LayoutDocument returned no layout tree\n");
+        return 4;
+    }
+
+    std::ofstream output(outputPath, std::ios::binary);
+
+    if (!output) {
+        std::fprintf(stderr, "Unable to write: %s\n", outputPath.c_str());
+        return 5;
+    }
+
+    output << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
+    output << "<svg xmlns=\"http://www.w3.org/2000/svg\""
+           << " width=\"" << width << "\""
+           << " height=\"" << height << "\""
+           << " viewBox=\"0 0 " << width << " " << height << "\">\n";
+
+    output << "<defs><clipPath id=\"viewport-clip\">"
+           << "<rect x=\"0\" y=\"0\" width=\"" << width
+           << "\" height=\"" << height << "\"/>"
+           << "</clipPath></defs>\n";
+
+    output << "<rect width=\"100%\" height=\"100%\" fill=\"white\"/>\n";
+    output << "<g clip-path=\"url(#viewport-clip)\">\n";
+
+    PaintSvg(*root, output);
+
+    output << "</g>\n";
+    output << "</svg>\n";
+
+    if (!output) {
+        std::fprintf(stderr, "Write failed: %s\n", outputPath.c_str());
+        return 5;
+    }
+
+    std::printf("Wrote %s\n", outputPath.c_str());
     return 0;
 }
