@@ -19,17 +19,50 @@
 static D2D1_COLOR_F ToD2Dc(const CssColor& c) { return { c.r, c.g, c.b, c.a }; }
 static constexpr size_t kMaxMeasuredTextChars = 16 * 1024;
 
-static std::wstring NodeTextContentWide(const Node* n) {
-    if (!n) return {};
-    if (n->type == NodeType::Text) {
-        std::wstring out;
-        out.reserve(n->text.size());
-        for (unsigned char c : n->text) out += (wchar_t)c;
-        return out;
+static std::wstring NodeTextContentWide(const Node* node) {
+    if (!node) {
+        return {};
     }
-    std::wstring out;
-    for (const auto& child : n->children) out += NodeTextContentWide(child.get());
-    return out;
+
+    if (node->type == NodeType::Text) {
+        if (node->text.empty()) {
+            return {};
+        }
+
+        const int length = MultiByteToWideChar(
+            CP_UTF8,
+            MB_ERR_INVALID_CHARS,
+            node->text.data(),
+            static_cast<int>(node->text.size()),
+            nullptr,
+            0);
+
+        if (length <= 0) {
+            return {};
+        }
+
+        std::wstring output(static_cast<size_t>(length), L'\0');
+
+        MultiByteToWideChar(
+            CP_UTF8,
+            MB_ERR_INVALID_CHARS,
+            node->text.data(),
+            static_cast<int>(node->text.size()),
+            output.data(),
+            length);
+
+        return output;
+    }
+
+    std::wstring output;
+
+    for (const auto& child : node->children) {
+        if (child) {
+            output += NodeTextContentWide(child.get());
+        }
+    }
+
+    return output;
 }
 
 static std::wstring SelectedOptionTextWide(const Node* select) {
@@ -180,21 +213,38 @@ IDWriteTextFormat* Renderer::FormatForKey(const FontKey& f) {
     return fmt;
 }
 
-static std::string WideToUtf8Simple(const std::wstring& s) {
-    std::string out;
-    for (wchar_t wc : s) {
-        unsigned int cp = (unsigned int)wc;
-        if (cp < 0x80) out.push_back((char)cp);
-        else if (cp < 0x800) {
-            out.push_back((char)(0xC0 | (cp >> 6)));
-            out.push_back((char)(0x80 | (cp & 0x3F)));
-        } else {
-            out.push_back((char)(0xE0 | (cp >> 12)));
-            out.push_back((char)(0x80 | ((cp >> 6) & 0x3F)));
-            out.push_back((char)(0x80 | (cp & 0x3F)));
-        }
+static std::string WideToUtf8(const std::wstring& text) {
+    if (text.empty()) {
+        return {};
     }
-    return out;
+
+    const int length = WideCharToMultiByte(
+        CP_UTF8,
+        WC_ERR_INVALID_CHARS,
+        text.data(),
+        static_cast<int>(text.size()),
+        nullptr,
+        0,
+        nullptr,
+        nullptr);
+
+    if (length <= 0) {
+        return {};
+    }
+
+    std::string output(static_cast<size_t>(length), '\0');
+
+    WideCharToMultiByte(
+        CP_UTF8,
+        WC_ERR_INVALID_CHARS,
+        text.data(),
+        static_cast<int>(text.size()),
+        output.data(),
+        length,
+        nullptr,
+        nullptr);
+
+    return output;
 }
 
 void Renderer::BeginTextSelection(float x, float y, float scrollY, float topInset) {
@@ -278,7 +328,7 @@ std::string Renderer::SelectedTextUtf8() {
             for (const auto& frag : line.frags) {
                 size_t begin = 0, end = 0;
                 if (TextSelectionSpan(frag, begin, end)) {
-                    out << WideToUtf8Simple(frag.text.substr(begin, end - begin));
+                    out << WideToUtf8(frag.text.substr(begin, end - begin));
                     wrote = lineWrote = true;
                 }
             }
@@ -871,8 +921,14 @@ void Renderer::PaintBox(const LayoutBox& box, float scrollY, float topInset, boo
     float authoredOpacity = box.style.opacitySet ? box.style.opacity : 1.f;
     if (box.style.filterSet) authoredOpacity *= box.style.filterOpacity;
     authoredOpacity = std::clamp(authoredOpacity, 0.f, 1.f);
+    const bool fullyTransparent = authoredOpacity < 0.01f;
     bool hidden = (box.style.visibilitySet && box.style.visibilityHidden)
-                || authoredOpacity < 0.01f;
+                  || fullyTransparent;
+
+    // opacity: 0 applies to the entire composited subtree.
+    if (fullyTransparent) {
+        return;
+    }
 
     if (CanCullOffscreenPaintSubtree(box, scrollY, topInset, m_paintDirtyTop, m_paintDirtyBottom))
         return;
