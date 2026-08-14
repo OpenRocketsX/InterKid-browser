@@ -1,130 +1,262 @@
 // render_probe.cpp - deterministic layout/paint diagnostics for fixtures.
 //
-// This is intentionally renderer-free: it uses the real HTML/CSS/layout engine,
+// This intentionally renderer-free tool uses the real HTML/CSS/layout engine,
 // then emits stable text for metrics, layout boxes, and conceptual paint order.
 #include "css/stylesheet.h"
 #include "html/parser.h"
 #include "layout/layout_engine.h"
 
 #include <algorithm>
+#include <cerrno>
 #include <cctype>
-#include <cstdlib>
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
-#include <functional>
 #include <sstream>
 #include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
-struct ProbeMeasure : ITextMeasure {
-    float MeasureText(const std::wstring& s, const FontKey& f) override {
-        return static_cast<float>(s.size()) * f.size * 0.5f;
+namespace {
+
+struct ProbeMeasure final : ITextMeasure {
+    float MeasureText(const std::wstring& text, const FontKey& font) override {
+        return static_cast<float>(text.size()) * font.size * 0.5f;
     }
-    float SpaceWidth(const FontKey& f) override { return f.size * 0.3f; }
-    bool ImageIntrinsic(const std::string&, float& w, float& h) override {
-        w = 0;
-        h = 0;
+
+    float SpaceWidth(const FontKey& font) override {
+        return font.size * 0.3f;
+    }
+
+    bool ImageIntrinsic(const std::string&, float& width, float& height) override {
+        width = 0.0f;
+        height = 0.0f;
         return false;
     }
+
     void RequestImage(const std::string&) override {}
 };
 
-static std::string UrlDecode(const std::string& s) {
-    std::string out;
-    for (size_t i = 0; i < s.size(); ++i) {
-        if (s[i] == '%' && i + 2 < s.size()) {
-            auto hex = [](char c) {
-                if (c >= '0' && c <= '9') return c - '0';
-                c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-                return 10 + (c - 'a');
-            };
-            out += static_cast<char>(hex(s[i + 1]) * 16 + hex(s[i + 2]));
-            i += 2;
-        } else {
-            out += s[i];
-        }
+int HexValue(char ch) {
+    if (ch >= '0' && ch <= '9') {
+        return ch - '0';
     }
-    return out;
+    if (ch >= 'a' && ch <= 'f') {
+        return ch - 'a' + 10;
+    }
+    if (ch >= 'A' && ch <= 'F') {
+        return ch - 'A' + 10;
+    }
+    return -1;
 }
 
-static Stylesheet CollectCss(const Node* root) {
+bool UrlDecode(std::string_view input, std::string& output) {
+    output.clear();
+    output.reserve(input.size());
+
+    for (size_t i = 0; i < input.size(); ++i) {
+        if (input[i] != '%') {
+            output += input[i];
+            continue;
+        }
+
+        if (i + 2 >= input.size()) {
+            return false;
+        }
+
+        const int high = HexValue(input[i + 1]);
+        const int low = HexValue(input[i + 2]);
+        if (high < 0 || low < 0) {
+            return false;
+        }
+
+        output += static_cast<char>((high << 4) | low);
+        i += 2;
+    }
+
+    return true;
+}
+
+std::string ToLowerAscii(std::string_view input) {
+    std::string output;
+    output.reserve(input.size());
+
+    for (const unsigned char ch : input) {
+        output += static_cast<char>(std::tolower(ch));
+    }
+
+    return output;
+}
+
+bool ExtractDataCss(std::string_view href, std::string& css) {
+    constexpr std::string_view dataPrefix = "data:";
+    constexpr std::string_view cssMimeType = "text/css";
+
+    if (href.size() < dataPrefix.size() ||
+        ToLowerAscii(href.substr(0, dataPrefix.size())) != dataPrefix) {
+        return false;
+    }
+
+    const size_t comma = href.find(',');
+    if (comma == std::string_view::npos) {
+        return false;
+    }
+
+    const std::string metadata = ToLowerAscii(
+        href.substr(dataPrefix.size(), comma - dataPrefix.size()));
+
+    const size_t semicolon = metadata.find(';');
+    const std::string_view mediaType = std::string_view(metadata).substr(
+        0, semicolon == std::string::npos ? metadata.size() : semicolon);
+
+    if (mediaType != cssMimeType) {
+        return false;
+    }
+
+    if (metadata.find(";base64") != std::string::npos) {
+        std::fprintf(stderr,
+                     "render_probe: base64 data stylesheets are not supported\n");
+        return false;
+    }
+
+    if (!UrlDecode(href.substr(comma + 1), css)) {
+        std::fprintf(stderr,
+                     "render_probe: ignoring malformed percent-encoded stylesheet URL\n");
+        return false;
+    }
+
+    return true;
+}
+
+void AppendStylesheet(Stylesheet& destination, const Stylesheet& source) {
+    if (source.rootRemBaseSet) {
+        destination.rootRemBase = source.rootRemBase;
+        destination.rootRemBaseSet = true;
+    }
+
+    destination.rules.insert(destination.rules.end(),
+                             source.rules.begin(),
+                             source.rules.end());
+}
+
+Stylesheet CollectCss(const Node* root) {
     Stylesheet sheet;
-    std::function<void(const Node*)> walk = [&](const Node* node) {
-        if (!node) return;
+    if (!root) {
+        return sheet;
+    }
+
+    std::vector<const Node*> stack{root};
+
+    while (!stack.empty()) {
+        const Node* node = stack.back();
+        stack.pop_back();
+
+        if (!node) {
+            continue;
+        }
+
         if (node->type == NodeType::Element && node->tagName == "style") {
             std::string css;
-            for (auto& child : node->children)
-                if (child->type == NodeType::Text) css += child->text;
-            auto part = ParseStylesheet(css);
-            if (part.rootRemBaseSet) {
-                sheet.rootRemBase = part.rootRemBase;
-                sheet.rootRemBaseSet = true;
+
+            for (const auto& child : node->children) {
+                if (child && child->type == NodeType::Text) {
+                    css += child->text;
+                }
             }
-            for (auto& rule : part.rules) sheet.rules.push_back(rule);
+
+            AppendStylesheet(sheet, ParseStylesheet(css));
         } else if (node->type == NodeType::Element && node->tagName == "link") {
-            std::string rel = node->attr("rel");
-            std::string low;
-            for (char c : rel) low += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-            if (low.find("stylesheet") != std::string::npos) {
-                std::string href = node->attr("href");
-                const std::string pfx = "data:text/css,";
-                if (href.rfind(pfx, 0) == 0) {
-                    auto part = ParseStylesheet(UrlDecode(href.substr(pfx.size())));
-                    if (part.rootRemBaseSet) {
-                        sheet.rootRemBase = part.rootRemBase;
-                        sheet.rootRemBaseSet = true;
-                    }
-                    for (auto& rule : part.rules) sheet.rules.push_back(rule);
+            const std::string rel = ToLowerAscii(node->attr("rel"));
+
+            if (rel.find("stylesheet") != std::string::npos) {
+                std::string css;
+
+                if (ExtractDataCss(node->attr("href"), css)) {
+                    AppendStylesheet(sheet, ParseStylesheet(css));
                 }
             }
         }
-        for (auto& child : node->children) walk(child.get());
-    };
-    walk(root);
+
+        for (auto it = node->children.rbegin(); it != node->children.rend(); ++it) {
+            if (*it) {
+                stack.push_back(it->get());
+            }
+        }
+    }
+
     sheet.rebuildRuleBuckets();
     return sheet;
 }
 
-static const char* KindName(BoxKind kind) {
+const char* KindName(BoxKind kind) {
     switch (kind) {
-        case BoxKind::Block: return "block";
-        case BoxKind::Inline: return "inline";
-        case BoxKind::InlineBlock: return "iblock";
-        case BoxKind::Replaced: return "replaced";
-        case BoxKind::Text: return "text";
-        case BoxKind::ListItem: return "list-item";
-        case BoxKind::Table: return "table";
-        case BoxKind::TableRow: return "table-row";
-        case BoxKind::TableCell: return "table-cell";
-        case BoxKind::Break: return "break";
+    case BoxKind::Block:
+        return "block";
+    case BoxKind::Inline:
+        return "inline";
+    case BoxKind::InlineBlock:
+        return "iblock";
+    case BoxKind::Replaced:
+        return "replaced";
+    case BoxKind::Text:
+        return "text";
+    case BoxKind::ListItem:
+        return "list-item";
+    case BoxKind::Table:
+        return "table";
+    case BoxKind::TableRow:
+        return "table-row";
+    case BoxKind::TableCell:
+        return "table-cell";
+    case BoxKind::Break:
+        return "break";
     }
+
     return "unknown";
 }
 
-static std::string Label(const LayoutBox& box) {
-    if (box.kind == BoxKind::Text) return "#text";
-    if (!box.node) return box.anonymous ? "(anonymous)" : "(box)";
-    std::string label = box.node->tagName;
-    std::string id = box.node->attr("id");
-    if (!id.empty()) label += "#" + id;
-    std::string cls = box.node->attr("class");
-    if (!cls.empty()) {
-        label += ".";
-        for (char c : cls) label += (c == ' ' ? '.' : c);
+std::string Label(const LayoutBox& box) {
+    if (box.kind == BoxKind::Text) {
+        return "#text";
     }
+
+    if (!box.node) {
+        return box.anonymous ? "(anonymous)" : "(box)";
+    }
+
+    std::string label = box.node->tagName;
+
+    const std::string id = box.node->attr("id");
+    if (!id.empty()) {
+        label += "#" + id;
+    }
+
+    const std::string className = box.node->attr("class");
+    if (!className.empty()) {
+        label += ".";
+
+        for (const char ch : className) {
+            label += ch == ' ' ? '.' : ch;
+        }
+    }
+
     return label;
 }
 
-static bool IsRealCssBox(const LayoutBox& box) {
+bool IsRealCssBox(const LayoutBox& box) {
     return box.kind != BoxKind::Text && box.kind != BoxKind::Break;
 }
 
-static int EffectivePosition(const LayoutBox& box) {
+int EffectivePosition(const LayoutBox& box) {
     return IsRealCssBox(box) ? box.style.positionMode : 0;
 }
 
-static std::string EffectiveZ(const LayoutBox& box) {
-    if (!IsRealCssBox(box) || !box.style.zIndexSet) return "auto";
+std::string EffectiveZ(const LayoutBox& box) {
+    if (!IsRealCssBox(box) || !box.style.zIndexSet) {
+        return "auto";
+    }
+
     return std::to_string(box.style.zIndex);
 }
 
@@ -137,113 +269,247 @@ struct Metrics {
     int maxDepth = 0;
 };
 
-static void CollectMetrics(const LayoutBox& box, int depth, Metrics& metrics) {
-    ++metrics.boxes;
-    metrics.maxDepth = std::max(metrics.maxDepth, depth);
-    if (EffectivePosition(box)) ++metrics.positioned;
-    if (box.isFloat()) ++metrics.floats;
-    if (!box.href.empty()) ++metrics.links;
-    metrics.lineBoxes += static_cast<int>(box.lines.size());
-    for (auto& child : box.kids) CollectMetrics(*child, depth + 1, metrics);
+void CollectMetrics(const LayoutBox& root, Metrics& metrics) {
+    std::vector<std::pair<const LayoutBox*, int>> stack;
+    stack.emplace_back(&root, 0);
+
+    while (!stack.empty()) {
+        const auto [box, depth] = stack.back();
+        stack.pop_back();
+
+        if (!box) {
+            continue;
+        }
+
+        ++metrics.boxes;
+        metrics.maxDepth = std::max(metrics.maxDepth, depth);
+
+        if (EffectivePosition(*box)) {
+            ++metrics.positioned;
+        }
+        if (box->isFloat()) {
+            ++metrics.floats;
+        }
+        if (!box->href.empty()) {
+            ++metrics.links;
+        }
+
+        metrics.lineBoxes += static_cast<int>(box->lines.size());
+
+        for (auto it = box->kids.rbegin(); it != box->kids.rend(); ++it) {
+            if (*it) {
+                stack.emplace_back(it->get(), depth + 1);
+            }
+        }
+    }
 }
 
-static void DumpLayout(const LayoutBox& box, int depth) {
-    std::string indent(static_cast<size_t>(depth) * 2, ' ');
-    printf("%slayout %s %s x=%.0f y=%.0f w=%.0f h=%.0f pos=%d z=%s\n",
-           indent.c_str(), KindName(box.kind), Label(box).c_str(),
-           box.x, box.y, box.borderBoxW(), box.borderBoxH(),
-           EffectivePosition(box), EffectiveZ(box).c_str());
-    for (auto& child : box.kids) DumpLayout(*child, depth + 1);
+void PrintLayoutBox(const LayoutBox& box, int depth) {
+    const std::string indent(static_cast<size_t>(depth) * 2, ' ');
+
+    std::printf("%slayout %s %s x=%.0f y=%.0f w=%.0f h=%.0f pos=%d z=%s\n",
+                indent.c_str(),
+                KindName(box.kind),
+                Label(box).c_str(),
+                box.x,
+                box.y,
+                box.borderBoxW(),
+                box.borderBoxH(),
+                EffectivePosition(box),
+                EffectiveZ(box).c_str());
 }
 
-static int PaintZ(const LayoutBox* box) {
+void DumpLayout(const LayoutBox& root) {
+    std::vector<std::pair<const LayoutBox*, int>> stack;
+    stack.emplace_back(&root, 0);
+
+    while (!stack.empty()) {
+        const auto [box, depth] = stack.back();
+        stack.pop_back();
+
+        if (!box) {
+            continue;
+        }
+
+        PrintLayoutBox(*box, depth);
+
+        for (auto it = box->kids.rbegin(); it != box->kids.rend(); ++it) {
+            if (*it) {
+                stack.emplace_back(it->get(), depth + 1);
+            }
+        }
+    }
+}
+
+int PaintZ(const LayoutBox* box) {
     return IsRealCssBox(*box) && box->style.zIndexSet ? box->style.zIndex : 0;
 }
 
-static void PaintOrder(const LayoutBox& box, std::vector<const LayoutBox*>& out) {
-    out.push_back(&box);
+void PaintOrder(const LayoutBox& box, std::vector<const LayoutBox*>& output) {
+    output.push_back(&box);
 
     bool simple = true;
-    for (auto& child : box.kids) {
-        if (child->isOutOfFlow() || child->isFloat() || child->style.positionMode == 1
-            || child->style.zIndexSet) {
+    for (const auto& child : box.kids) {
+        if (!child) {
+            continue;
+        }
+
+        if (child->isOutOfFlow() || child->isFloat() ||
+            child->style.positionMode == 1 || child->style.zIndexSet) {
             simple = false;
             break;
         }
     }
 
     if (simple) {
-        for (auto& child : box.kids) PaintOrder(*child, out);
+        for (const auto& child : box.kids) {
+            if (child) {
+                PaintOrder(*child, output);
+            }
+        }
         return;
     }
 
-    std::vector<const LayoutBox*> negZ, inflow, floats, posZ;
-    for (auto& child : box.kids) {
+    std::vector<const LayoutBox*> negativeZ;
+    std::vector<const LayoutBox*> inFlow;
+    std::vector<const LayoutBox*> floats;
+    std::vector<const LayoutBox*> positioned;
+
+    for (const auto& child : box.kids) {
+        if (!child) {
+            continue;
+        }
+
         const LayoutBox* item = child.get();
+
         if (item->isOutOfFlow()) {
-            if (item->style.zIndexSet && item->style.zIndex < 0) negZ.push_back(item);
-            else posZ.push_back(item);
+            if (item->style.zIndexSet && item->style.zIndex < 0) {
+                negativeZ.push_back(item);
+            } else {
+                positioned.push_back(item);
+            }
         } else if (item->isFloat()) {
             floats.push_back(item);
         } else if (item->style.positionMode == 1) {
-            posZ.push_back(item);
+            positioned.push_back(item);
         } else {
-            inflow.push_back(item);
+            inFlow.push_back(item);
         }
     }
-    auto byZ = [](const LayoutBox* a, const LayoutBox* b) { return PaintZ(a) < PaintZ(b); };
-    std::stable_sort(negZ.begin(), negZ.end(), byZ);
-    std::stable_sort(posZ.begin(), posZ.end(), byZ);
 
-    for (auto* item : negZ) PaintOrder(*item, out);
-    for (auto* item : inflow) PaintOrder(*item, out);
-    for (auto* item : floats) PaintOrder(*item, out);
-    for (auto* item : posZ) PaintOrder(*item, out);
+    const auto byZ = [](const LayoutBox* left, const LayoutBox* right) {
+        return PaintZ(left) < PaintZ(right);
+    };
+
+    std::stable_sort(negativeZ.begin(), negativeZ.end(), byZ);
+    std::stable_sort(positioned.begin(), positioned.end(), byZ);
+
+    for (const LayoutBox* item : negativeZ) {
+        PaintOrder(*item, output);
+    }
+    for (const LayoutBox* item : inFlow) {
+        PaintOrder(*item, output);
+    }
+    for (const LayoutBox* item : floats) {
+        PaintOrder(*item, output);
+    }
+    for (const LayoutBox* item : positioned) {
+        PaintOrder(*item, output);
+    }
 }
 
+bool ParseViewportWidth(const char* text, float& width) {
+    char* end = nullptr;
+    errno = 0;
+
+    const float value = std::strtof(text, &end);
+    if (errno != 0 || end == text || *end != '\0' || value <= 0.0f) {
+        return false;
+    }
+
+    width = value;
+    return true;
+}
+
+} // namespace
+
 int main(int argc, char** argv) {
-    if (argc < 2) {
-        fprintf(stderr, "usage: render_probe file.html [viewport-width]\n");
+    if (argc < 2 || argc > 3) {
+        std::fprintf(stderr, "Usage: %s <file.html> [viewport-width]\n", argv[0]);
+        return 1;
+    }
+
+    float viewportWidth = 1200.0f;
+    if (argc == 3 && !ParseViewportWidth(argv[2], viewportWidth)) {
+        std::fprintf(stderr, "Invalid viewport width: %s\n", argv[2]);
         return 1;
     }
 
     std::ifstream file(argv[1], std::ios::binary);
     if (!file) {
-        fprintf(stderr, "render_probe: could not open %s\n", argv[1]);
-        return 1;
+        std::fprintf(stderr, "render_probe: could not open %s\n", argv[1]);
+        return 2;
     }
-    std::stringstream buffer;
+
+    std::ostringstream buffer;
     buffer << file.rdbuf();
 
-    auto dom = ParseHtml(buffer.str());
+    if (file.bad()) {
+        std::fprintf(stderr, "render_probe: failed while reading %s\n", argv[1]);
+        return 2;
+    }
+
+    const auto dom = ParseHtml(buffer.str());
+    if (!dom) {
+        std::fprintf(stderr, "render_probe: HTML parsing produced no document\n");
+        return 3;
+    }
+
     Stylesheet sheet = CollectCss(dom.get());
+    sheet.setViewport(viewportWidth, 800.0f);
+
     ProbeMeasure measure;
 
     LayoutInput input;
     input.document = dom.get();
     input.sheet = &sheet;
     input.measure = &measure;
-    input.viewportW = argc > 2 ? static_cast<float>(atoi(argv[2])) : 1200.f;
-    input.viewportH = 800.f;
-    input.zoom = 1.f;
+    input.viewportW = viewportWidth;
+    input.viewportH = 800.0f;
+    input.zoom = 1.0f;
 
-    auto layout = LayoutDocument(input);
-    if (!layout) return 1;
+    const auto layout = LayoutDocument(input);
+    if (!layout) {
+        std::fprintf(stderr, "render_probe: LayoutDocument returned no layout tree\n");
+        return 4;
+    }
 
     Metrics metrics;
-    CollectMetrics(*layout, 0, metrics);
-    printf("metrics boxes=%d positioned=%d floats=%d links=%d lineBoxes=%d maxDepth=%d\n",
-           metrics.boxes, metrics.positioned, metrics.floats, metrics.links,
-           metrics.lineBoxes, metrics.maxDepth);
+    CollectMetrics(*layout, metrics);
 
-    DumpLayout(*layout, 0);
+    std::printf(
+        "metrics boxes=%d positioned=%d floats=%d links=%d lineBoxes=%d maxDepth=%d\n",
+        metrics.boxes,
+        metrics.positioned,
+        metrics.floats,
+        metrics.links,
+        metrics.lineBoxes,
+        metrics.maxDepth);
+
+    DumpLayout(*layout);
 
     std::vector<const LayoutBox*> order;
     PaintOrder(*layout, order);
+
     for (size_t i = 0; i < order.size(); ++i) {
         const LayoutBox* box = order[i];
-        printf("paint-order %zu %s %s z=%s\n", i, KindName(box->kind), Label(*box).c_str(),
-               EffectiveZ(*box).c_str());
+
+        std::printf("paint-order %zu %s %s z=%s\n",
+                    i,
+                    KindName(box->kind),
+                    Label(*box).c_str(),
+                    EffectiveZ(*box).c_str());
     }
+
     return 0;
 }
