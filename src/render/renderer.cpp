@@ -49,19 +49,6 @@ static D2D1_COLOR_F ThemeColor(vertex::chrome_theme::Rgb c, float a = 1.f) {
 static constexpr float kMarginX = 32.f;
 static constexpr float kMarginY =  8.f;
 
-static bool HasUrlScheme(const std::string& url) {
-    size_t colon = url.find(':');
-    if (colon == std::string::npos || colon == 0) return false;
-    size_t stop = url.find_first_of("/?#");
-    if (stop != std::string::npos && stop < colon) return false;
-    for (size_t i = 0; i < colon; ++i) {
-        char c = url[i];
-        if (!std::isalnum((unsigned char)c) && c != '+' && c != '-' && c != '.')
-            return false;
-    }
-    return true;
-}
-
 static bool LooksLikeImageUrl(const std::string& url) {
     std::string low;
     for (char c : url) low += (char)std::tolower((unsigned char)c);
@@ -86,19 +73,13 @@ static bool IsBreakableWhitespace(wchar_t c) {
     return c != 0x00A0 && iswspace(c);
 }
 
-std::string Renderer::ResolveUrl(const std::string& href, const std::string& base) {
-    if (href.empty()) return base;
-    if (HasUrlScheme(href)) return href;
-    if (href.size() >= 2 && href[0] == '/' && href[1] == '/')
-        return "https:" + href;
-    if (href[0] == '/') {
-        size_t p = base.find("://");
-        if (p == std::string::npos) return href;
-        size_t sl = base.find('/', p + 3);
-        return (sl == std::string::npos ? base : base.substr(0, sl)) + href;
+std::string Renderer::ResolveUrl(const std::string& href,
+                                 const std::string& base) {
+    if (href.empty()) {
+        return base;
     }
-    size_t last = base.rfind('/');
-    return (last == std::string::npos ? base : base.substr(0, last + 1)) + href;
+
+    return ResolveUrlAgainstBase(href, base);
 }
 
 ID2D1SolidColorBrush* Renderer::TempBrush(D2D1_COLOR_F color) {
@@ -156,38 +137,96 @@ void Renderer::CreateTabFont() {
 }
 
 bool Renderer::Init(HWND hwnd) {
+    if (!hwnd) {
+        return false;
+    }
+
     m_hwnd = hwnd;
-    if (FAILED(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &m_factory)))
+
+    if (FAILED(D2D1CreateFactory(
+            D2D1_FACTORY_TYPE_SINGLE_THREADED,
+            &m_factory))) {
         return false;
-    if (FAILED(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED,
+    }
+
+    if (FAILED(DWriteCreateFactory(
+            DWRITE_FACTORY_TYPE_SHARED,
             __uuidof(IDWriteFactory),
-            reinterpret_cast<IUnknown**>(&m_dwrite))))
+            reinterpret_cast<IUnknown**>(&m_dwrite)))) {
+        m_factory->Release();
+        m_factory = nullptr;
         return false;
-    // WIC removed — stb_image handles image decoding (cross-platform).
+    }
+
     CreateTabFont();
-    return EnsureTarget();
+
+    if (!EnsureTarget()) {
+        ReleaseTarget();
+
+        if (m_dwrite) {
+            m_dwrite->Release();
+            m_dwrite = nullptr;
+        }
+
+        if (m_factory) {
+            m_factory->Release();
+            m_factory = nullptr;
+        }
+
+        return false;
+    }
+
+    return true;
 }
 
 bool Renderer::EnsureTarget() {
-    if (m_rt) return true;
-    RECT rc; GetClientRect(m_hwnd, &rc);
-    m_width  = (UINT)(rc.right  - rc.left);
-    m_height = (UINT)(rc.bottom - rc.top);
-    // Force 96 DPI so Direct2D DIPs == physical pixels. The layout engine works
-    // in physical pixels (m_width/m_height from GetClientRect), so the render
-    // target must use the same coordinate space. Otherwise on a high-DPI display
-    // (e.g. 125% scaling) the render target would be in scaled DIPs while layout
-    // is in physical px, and everything centered in layout space drifts off.
-    D2D1_RENDER_TARGET_PROPERTIES rtProps = D2D1::RenderTargetProperties(
-        D2D1_RENDER_TARGET_TYPE_DEFAULT,
-        D2D1::PixelFormat(DXGI_FORMAT_UNKNOWN, D2D1_ALPHA_MODE_UNKNOWN),
-        96.f, 96.f);
-    if (FAILED(m_factory->CreateHwndRenderTarget(
-            rtProps,
-            D2D1::HwndRenderTargetProperties(m_hwnd, D2D1::SizeU(m_width, m_height)),
-            &m_rt)))
+    if (m_rt) {
+        return true;
+    }
+
+    if (!m_factory || !m_hwnd) {
         return false;
-    return CreateBrushes();
+    }
+
+    RECT clientRect{};
+    if (!GetClientRect(m_hwnd, &clientRect)) {
+        return false;
+    }
+
+    const LONG clientWidth = clientRect.right - clientRect.left;
+    const LONG clientHeight = clientRect.bottom - clientRect.top;
+
+    if (clientWidth <= 0 || clientHeight <= 0) {
+        return false;
+    }
+
+    m_width = static_cast<UINT>(clientWidth);
+    m_height = static_cast<UINT>(clientHeight);
+
+    const D2D1_RENDER_TARGET_PROPERTIES targetProperties =
+        D2D1::RenderTargetProperties(
+            D2D1_RENDER_TARGET_TYPE_DEFAULT,
+            D2D1::PixelFormat(
+                DXGI_FORMAT_UNKNOWN,
+                D2D1_ALPHA_MODE_UNKNOWN),
+            96.0f,
+            96.0f);
+
+    if (FAILED(m_factory->CreateHwndRenderTarget(
+            targetProperties,
+            D2D1::HwndRenderTargetProperties(
+                m_hwnd,
+                D2D1::SizeU(m_width, m_height)),
+            &m_rt))) {
+        return false;
+    }
+
+    if (!CreateBrushes()) {
+        ReleaseTarget();
+        return false;
+    }
+
+    return true;
 }
 
 bool Renderer::CreateBrushes() {
@@ -243,9 +282,19 @@ Renderer::~Renderer() {
     r(m_dwrite); r(m_factory);
 }
 
-void Renderer::Resize(UINT w, UINT h) {
-    m_width = w; m_height = h;
-    if (m_rt) m_rt->Resize(D2D1::SizeU(w, h));
+void Renderer::Resize(UINT width, UINT height) {
+    m_width = width;
+    m_height = height;
+
+    if (!m_rt || width == 0 || height == 0) {
+        return;
+    }
+
+    const HRESULT result = m_rt->Resize(D2D1::SizeU(width, height));
+
+    if (result == D2DERR_RECREATE_TARGET) {
+        ReleaseTarget();
+    }
 }
 
 void Renderer::SetPaintDirtyRect(const RECT& rect) {
@@ -363,10 +412,25 @@ void Renderer::ReceiveImage(const std::string& url, const std::vector<uint8_t>& 
             pixels = decodedPixels.data();
         }
     }
-    if (!pixels || w <= 0 || h <= 0) { fail(); return; }
+    constexpr int kMaxImageDimension = 16384;
+    constexpr size_t kMaxDecodedImageBytes = 256ull * 1024ull * 1024ull;
+
+    if (!pixels || w <= 0 || h <= 0 ||
+        w > kMaxImageDimension || h > kMaxImageDimension) {
+        fail();
+        return;
+    }
+
+    const size_t pixelCount =
+        static_cast<size_t>(w) * static_cast<size_t>(h);
+
+    if (pixelCount > kMaxDecodedImageBytes / 4) {
+        fail();
+        return;
+    }
 
     // stb_image outputs RGBA; Direct2D wants PBGRA (pre-multiplied, swizzled).
-    for (int i = 0; i < w * h; ++i) {
+    for (size_t i = 0; i < pixelCount; ++i) {
         unsigned char* p = pixels + i * 4;
         unsigned char r = p[0], g = p[1], b = p[2], a = p[3];
         float af = a / 255.f;
@@ -380,7 +444,7 @@ void Renderer::ReceiveImage(const std::string& url, const std::vector<uint8_t>& 
         D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
     ID2D1Bitmap* bmp = nullptr;
     HRESULT hr = m_rt->CreateBitmap(
-        D2D1::SizeU((UINT32)w, (UINT32)h), pixels, (UINT32)(w * 4), props, &bmp);
+        D2D1::SizeU((UINT32)w, (UINT32)h), pixels, static_cast<UINT32>(static_cast<size_t>(w) * 4), props, &bmp);
 
     if (SUCCEEDED(hr) && bmp) {
         auto it = m_images.find(url);
