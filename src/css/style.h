@@ -84,6 +84,8 @@ struct ComputedStyle {
     bool     whiteSpacePre   = false;
     float    letterSpacing   = 0;    // extra px between characters
     bool     letterSpacingSet= false;
+    float    wordSpacing     = 0;    // extra px added to each collapsed space
+    bool     wordSpacingSet  = false;
     int      wordBreak       = 0;    // 0=normal, 1=break-all, 2=break-word
     bool     wordBreakSet    = false;
     int      textOverflow    = 0;    // 0=clip, 1=ellipsis
