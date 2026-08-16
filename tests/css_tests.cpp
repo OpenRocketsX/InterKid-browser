@@ -125,6 +125,20 @@ TestResult RunCssTests() {
     }
 
     {
+        auto dom = ParseHtml("<html><body><p id=\"target\"><span>text</span></p></body></html>");
+        auto sheet = ParseStylesheet("#target { word-spacing: 3px; } #target span { word-spacing: normal; }");
+        auto* target = FindElementById(dom.get(), "target");
+        auto* span = FindFirstElement(target, "span");
+        ComputedStyle targetStyle = target ? sheet.resolve(target) : ComputedStyle{};
+        ComputedStyle spanStyle = span ? sheet.resolve(span) : ComputedStyle{};
+        ExpectEqual("css/text/word-spacing-and-inheritance",
+            std::to_string(targetStyle.wordSpacingSet) + ":" + std::to_string((int)targetStyle.wordSpacing)
+                + ":" + std::to_string(spanStyle.wordSpacingSet) + ":" + std::to_string((int)spanStyle.wordSpacing) + "\n",
+            "1:3:1:0\n",
+            result);
+    }
+
+    {
         auto dom = ParseHtml("<html><body><p id=\"target\"></p></body></html>");
         auto* node = FindElementById(dom.get(), "target");
         auto sheet = ParseStylesheet(
