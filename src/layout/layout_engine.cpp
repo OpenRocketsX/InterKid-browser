@@ -256,6 +256,7 @@ void InheritInto(ComputedStyle& s, const ComputedStyle& parent) {
     if (!s.textAlignSet && parent.textAlignSet) { s.textAlign = parent.textAlign; s.textAlignSet = true; }
     if (!s.textIndentSet && parent.textIndentSet) { s.textIndent = parent.textIndent; s.textIndentSet = true; }
     if (!s.letterSpacingSet && parent.letterSpacingSet) { s.letterSpacing = parent.letterSpacing; s.letterSpacingSet = true; }
+    if (!s.wordSpacingSet && parent.wordSpacingSet) { s.wordSpacing = parent.wordSpacing; s.wordSpacingSet = true; }
     if (!s.wordBreakSet && parent.wordBreakSet) { s.wordBreak = parent.wordBreak; s.wordBreakSet = true; }
     if (!s.textTransformSet && parent.textTransformSet) { s.textTransform = parent.textTransform; s.textTransformSet = true; }
     if (!s.whiteSpaceSet && parent.whiteSpaceSet) {
@@ -306,6 +307,9 @@ void ApplyUaDefaults(const std::string& tag, ComputedStyle& s) {
     else if (tag == "address") { setItalic(); }
     else if (tag == "code" || tag == "tt" || tag == "kbd" || tag == "samp") { setMono(); }
     else if (tag == "small") { if (s.fontSize <= 0) s.fontSize = 13; }
+    // The obsolete HTML <center> element is still supported by browsers as a
+    // block container with centered inline content.
+    else if (tag == "center") { if (!s.textAlignSet) { s.textAlign = 1; s.textAlignSet = true; } }
     else if (tag == "a") { if (!s.underline) s.underline = true; }
     else if (tag == "u" || tag == "ins") { if (!s.noUnderline) s.underline = true; }
     else if (tag == "s" || tag == "strike" || tag == "del") { s.lineThrough = true; }
@@ -455,6 +459,10 @@ ComputedStyle AnonymousBlockStyleFrom(const ComputedStyle& parent) {
     if (parent.letterSpacingSet) {
         s.letterSpacing = parent.letterSpacing;
         s.letterSpacingSet = true;
+    }
+    if (parent.wordSpacingSet) {
+        s.wordSpacing = parent.wordSpacing;
+        s.wordSpacingSet = true;
     }
     if (parent.wordBreakSet) {
         s.wordBreak = parent.wordBreak;
@@ -1998,6 +2006,8 @@ static void CollectInline(Engine& E, LayoutBox* box, std::vector<InlineItem>& it
                 InlineItem it; it.type = InlineItem::Space; it.box = box; it.font = f;
                 it.owners = owners;
                 it.width = E.in.measure ? E.in.measure->SpaceWidth(f) : f.size * 0.3f;
+                if (box->style.wordSpacingSet)
+                    it.width = std::max(0.f, it.width + box->style.wordSpacing * E.Z);
                 it.ascent = asc; it.lineH = lh; it.vAlign = va;
                 items.push_back(it);
                 i++;
