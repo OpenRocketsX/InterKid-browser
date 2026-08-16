@@ -328,7 +328,10 @@ void HtmlTokenizer::tokenize(const std::string& html, Callback cb) {
         if (tagName == "plaintext") tagName = "pre";   // <plaintext> → <pre>
         if (tagName == "acronym") tagName = "abbr";    // <acronym> → <abbr>
         if (tagName == "dir") tagName = "ul";          // <dir> → <ul>
-        if (tagName == "center") tagName = "div";      // <center> = block (styled by CSS)
+        // Keep <center> as its own element.  Although obsolete, it has a
+        // presentational text-align:center default that remains important for
+        // server-rendered fallback pages (including Google's homepage).
+        // Converting it to a div discards that behavior before layout sees it.
         if (tagName == "nobr") tagName = "span";       // <nobr> → <span> (white-space handled by CSS)
 
         auto attrs = isEnd ? std::map<std::string,std::string>{}
