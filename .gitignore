@@ -27,3 +27,5 @@ third_party/vertex_arti/target/
 /build/
 /build-debug/
 /cmake-build-*/
+/build/
+/build-debug/
