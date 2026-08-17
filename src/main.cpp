@@ -25,6 +25,7 @@
 #include "platform/box_painter.h"
 #include "platform/downloads.h"
 #include "platform/profile.h"
+#include "platform/internal_pages.h"
 #include "js/engine.h"
 #include "js/dom_bridge.h"
 
@@ -1644,6 +1645,17 @@ static void ShowInternalPage(const std::string& url,
     InvalidateRect(g_hwnd, NULL, FALSE);
 }
 
+static void ShowOfflinePage(const std::string& failedUrl,
+                            const std::string& error,
+                            int httpStatus,
+                            bool pushHistory = true) {
+    const std::string title = httpStatus == 404 ? "Page unavailable" : "Connection lost";
+    ShowInternalPage(failedUrl.empty() ? "vertex://offline-game" : failedUrl,
+                     title,
+                     vertex::internal_pages::OfflinePageHtml(failedUrl, error, httpStatus),
+                     pushHistory);
+}
+
 static void ShowDownloadsPage(bool pushHistory = true) {
     ShowInternalPage("vertex://downloads", "Downloads", DownloadsPageHtml(), pushHistory);
 }
@@ -1754,6 +1766,13 @@ static void Navigate(int tabIdx, const std::string& rawUrl, bool pushHistory) {
         return;
     }
 
+    if (url == "vertex://offline-game" || url == "vertex://404") {
+        auto internal = vertex::internal_pages::PageContent{};
+        if (vertex::internal_pages::Resolve(url, internal))
+            ShowInternalPage(internal.url, internal.title, internal.html, pushHistory);
+        return;
+    }
+
     // If it's a URL, ensure it has a scheme; otherwise treat it as a search
     // query and route it to DuckDuckGo's server-rendered results page.
     std::string displayUrl = url;
@@ -1804,10 +1823,13 @@ static void Navigate(int tabIdx, const std::string& rawUrl, bool pushHistory) {
                 LoadExternalScriptSources(p->dom, p->url);
             } else {
                 p->error = res.error;
+                p->httpStatus = res.status;
+                p->dom = ParseHtml(vertex::internal_pages::OfflinePageHtml(
+                    url, p->error, p->httpStatus));
             }
         } catch (...) {
-            p->dom.reset();
             p->error = "Failed to load page (internal error).";
+            p->dom = ParseHtml(vertex::internal_pages::OfflinePageHtml(url, p->error));
         }
         auto* pm = new PageMsg{ tabIdx, p };
         PostMessageW(hwnd, WM_PAGE_READY, 0, (LPARAM)pm);
@@ -1853,10 +1875,13 @@ static void NavigateRequest(int tabIdx, const FetchRequest& request, bool pushHi
                 LoadExternalScriptSources(p->dom, p->url);
             } else {
                 p->error = res.error;
+                p->httpStatus = res.status;
+                p->dom = ParseHtml(vertex::internal_pages::OfflinePageHtml(
+                    request.url, p->error, p->httpStatus));
             }
         } catch (...) {
-            p->dom.reset();
             p->error = "Failed to load page (internal error).";
+            p->dom = ParseHtml(vertex::internal_pages::OfflinePageHtml(request.url, p->error));
         }
         auto* pm = new PageMsg{ tabIdx, p };
         PostMessageW(hwnd, WM_PAGE_READY, 0, (LPARAM)pm);
@@ -2463,11 +2488,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 tab.url = p->url;
                 std::string title = ExtractTitle(p->dom.get());
                 tab.title = title.empty() ? p->url : title;
-            } else {
-                std::string html = "<html><body><h2>Error</h2><p>"
-                    + p->error + "</p></body></html>";
-                tab.page->dom = ParseHtml(html);
-                tab.title = "Error";
             }
         }
 

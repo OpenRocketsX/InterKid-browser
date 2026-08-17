@@ -20,6 +20,7 @@
 //
 
 #include "platform/browser_core.h"
+#include "platform/internal_pages.h"
 #include "platform/form_state.h"
 #include "platform/updater.h"
 #include "js/engine.h"
@@ -233,6 +234,28 @@ public:
             if (pushHistory) pushToHistory(tab, url);
             updateTitle();
             if (cb.setAddressText) cb.setAddressText(url);
+            if (cb.repaint) cb.repaint();
+            return;
+        }
+
+        vertex::internal_pages::PageContent internal;
+        if (vertex::internal_pages::Resolve(url, internal)) {
+            tab.page = std::make_shared<Page>();
+            tab.page->url = internal.url;
+            tab.page->dom = ParseHtml(internal.html);
+            tab.title = internal.title;
+            tab.url = internal.url;
+            tab.loading = false;
+            state.loading = false;
+            tab.scrollY = 0;
+            tab.pendingFragment.clear();
+            tab.fragmentScrollPending = false;
+            state.form.blur();
+            state.form.values.clear();
+            if (pushHistory) pushToHistory(tab, internal.url);
+            runPageScripts(tabIdx);
+            updateTitle();
+            if (cb.setAddressText) cb.setAddressText(internal.url);
             if (cb.repaint) cb.repaint();
             return;
         }

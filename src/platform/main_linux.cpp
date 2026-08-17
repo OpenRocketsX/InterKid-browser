@@ -24,6 +24,7 @@
 #include "platform/box_painter.h"
 #include "platform/plat_text_measure.h"
 #include "platform/profile.h"
+#include "platform/internal_pages.h"
 #include "platform/downloads.h"
 #include "platform/platform_features.h"
 #include "platform/media_player.h"
@@ -1093,6 +1094,9 @@ static void platformFetch(int tabIdx, FetchRequest request) {
             LoadExternalScriptSources(page->dom, page->url);
         } else {
             page->error = res.error;
+            page->httpStatus = res.status;
+            page->dom = ParseHtml(vertex::internal_pages::OfflinePageHtml(
+                url, page->error, page->httpStatus));
         }
         PostToMainThread([tabIdx, page]() {
             g_chrome.onPageReady(tabIdx, page);

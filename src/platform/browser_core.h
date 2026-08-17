@@ -50,6 +50,7 @@ struct Page {
     std::string           url;
     std::shared_ptr<Node> dom;
     std::string           error;
+    int                   httpStatus = 0;
 };
 
 struct ImageMsg {
