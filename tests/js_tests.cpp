@@ -10,6 +10,7 @@
 #include "js/dom_bridge.h"
 #include "html/parser.h"
 #include "network/resource_cache.h"
+#include "platform/internal_pages.h"
 
 #include <chrono>
 #include <sstream>
@@ -212,6 +213,43 @@ static std::string RunScriptCommentSurvivesHtmlExtractionSnapshot() {
     std::string text;
     for (auto& c : p->children) if (c->type == NodeType::Text) text += c->text;
     return "text=" + text + "\n";
+}
+
+static std::string RunOfflineGameControlsSnapshot() {
+    auto dom = ParseHtml(vertex::internal_pages::OfflinePageHtml());
+    JsEngine engine;
+    engine.setDocument(dom, []() {});
+
+    Node* script = FindByTag(dom.get(), "script");
+    if (!script) return "no script node\n";
+
+    std::string source;
+    for (auto& child : script->children)
+        if (child->type == NodeType::Text) source += child->text;
+    if (!engine.runScript(source, "vertex://offline-game")) return "script failed\n";
+
+    Node* message = FindById(dom.get(), "game-message");
+    Node* score = FindById(dom.get(), "score");
+    if (!message || !score) return "missing game controls\n";
+
+    const bool jumped = engine.runScript(
+        "document.getElementById('jump-game').click();", "offline-game-jump");
+    const std::string jumpStyle = message->attr("style");
+    const bool restarted = engine.runScript(
+        "document.getElementById('restart-game').click();", "offline-game-restart");
+
+    std::string messageText;
+    for (auto& child : message->children)
+        if (child->type == NodeType::Text) messageText += child->text;
+    std::string scoreText;
+    for (auto& child : score->children)
+        if (child->type == NodeType::Text) scoreText += child->text;
+
+    return std::string(jumped && restarted ? "ok" : "failed")
+        + " jump=" + jumpStyle
+        + " restart=" + message->attr("style")
+        + " message=" + messageText
+        + " score=" + scoreText + "\n";
 }
 
 // Exercises the canvas 2D JS surface with no ICanvasSurface wired up (the
@@ -1981,6 +2019,12 @@ TestResult RunJsTests() {
         "js/engine/script-comment-survives-html-extraction",
         RunScriptCommentSurvivesHtmlExtractionSnapshot(),
         "text=AFTER-COMMENT\n",
+        result);
+
+    ExpectEqual(
+        "js/internal-pages/offline-game-visible-controls",
+        RunOfflineGameControlsSnapshot(),
+        "ok jump=display:none restart=display:block message=Use Jump or press Space to start. score=Score 0000\n",
         result);
 
     ExpectEqual(
