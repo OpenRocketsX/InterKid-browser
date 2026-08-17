@@ -34,6 +34,7 @@
 #endif
 #endif
 
+#ifdef _WIN32
 static LONG WINAPI SehHandler(EXCEPTION_POINTERS* exceptionPointers) {
     const DWORD code = exceptionPointers->ExceptionRecord->ExceptionCode;
     void* address = exceptionPointers->ExceptionRecord->ExceptionAddress;
@@ -90,6 +91,7 @@ static LONG WINAPI SehHandler(EXCEPTION_POINTERS* exceptionPointers) {
     std::fflush(stdout);
     return EXCEPTION_EXECUTE_HANDLER;
 }
+#endif
 
 namespace {
 
