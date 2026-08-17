@@ -127,11 +127,6 @@ h1 { margin: 0 0 6px; color: #171a1f; font-size: 26px; line-height: 1.2; }
     border: 1px solid #c3c9d1; border-radius: 3px; background: #ffffff;
     color: #353c46; text-align: center; font-size: 12px;
 }
-.game-actions { margin-top: 10px; }
-.control-button {
-    margin-right: 7px; padding: 7px 12px; border: 1px solid #aeb6c2;
-    border-radius: 4px; background: #ffffff; color: #273140; font-weight: 700;
-}
 .hint { margin: 10px 0 0; color: #657080; font-family: monospace; font-size: 12px; }
 .no-script { color: #657080; font-size: 12px; }
 </style>
@@ -160,144 +155,11 @@ h1 { margin: 0 0 6px; color: #171a1f; font-size: 26px; line-height: 1.2; }
 <span class="rocket-nose"></span><span class="rocket-fin"></span>
 </div>
 <div class="ground"></div>
-<div id="game-message" class="game-message">Use Jump or press Space to start.</div>
+<div id="game-message" class="game-message">Rocket Runner is paused while Vertex recovers this page.</div>
 </div>
-<div class="game-actions">
-<button id="jump-game" class="control-button" type="button">Jump</button>
-<button id="restart-game" class="control-button" type="button">Restart</button>
-</div>
-<p class="hint">Space / ↑ / W to thrust · R to restart</p>
-<noscript><p class="no-script">Rocket Runner needs JavaScript. Retry and Open Home remain available.</p></noscript>
+<p class="hint">Retry the page or open Home to continue browsing.</p>
 </section>
 </main>
-<script>
-    var stage = document.getElementById('game');
-    var rocket = document.getElementById('rocket');
-    var obstacleLayer = document.getElementById('obstacles');
-    var scoreLabel = document.getElementById('score');
-    var message = document.getElementById('game-message');
-    var jumpButton = document.getElementById('jump-game');
-    var restartButton = document.getElementById('restart-game');
-    var rocketY = 0;
-    var velocity = 0;
-    var score = 0;
-    var ticksUntilObstacle = 38;
-    var running = false;
-    var crashed = false;
-    var obstacles = [];
-
-    function setRocketPosition() {
-        rocket.style.bottom = (24 + Math.floor(rocketY)) + 'px';
-    }
-
-    function clearObstacles() {
-        while (obstacles.length) {
-            var obstacle = obstacles.pop();
-            if (obstacle.element.parentNode) {
-                obstacle.element.parentNode.removeChild(obstacle.element);
-            }
-        }
-    }
-
-    function resetGame() {
-        clearObstacles();
-        rocketY = 0;
-        velocity = 0;
-        score = 0;
-        ticksUntilObstacle = 38;
-        running = false;
-        crashed = false;
-        setRocketPosition();
-        scoreLabel.textContent = 'Score 0000';
-        message.textContent = 'Use Jump or press Space to start.';
-        message.style.display = 'block';
-    }
-
-    function jump() {
-        if (crashed) return;
-        running = true;
-        velocity = 12;
-        message.style.display = 'none';
-    }
-
-    function addObstacle() {
-        var element = document.createElement('div');
-        var height = 32 + Math.floor(Math.random() * 34);
-        var width = stage.clientWidth;
-        if (!width || width < 200) width = 640;
-        element.className = 'obstacle';
-        element.style.height = height + 'px';
-        element.style.left = width + 'px';
-        obstacleLayer.appendChild(element);
-        obstacles.push({ element: element, x: width, height: height });
-    }
-
-    function crash() {
-        crashed = true;
-        running = false;
-        message.textContent = 'Flight ended. Press R or Restart.';
-        message.style.display = 'block';
-    }
-
-    function updateGame() {
-        if (!running || crashed) return;
-
-        velocity -= 1;
-        rocketY += velocity;
-        if (rocketY < 0) {
-            rocketY = 0;
-            velocity = 0;
-        }
-        if (rocketY > 135) {
-            rocketY = 135;
-            velocity = 0;
-        }
-        setRocketPosition();
-
-        ticksUntilObstacle -= 1;
-        if (ticksUntilObstacle <= 0) {
-            addObstacle();
-            ticksUntilObstacle = 34 + Math.floor(Math.random() * 14);
-        }
-
-        for (var i = obstacles.length - 1; i >= 0; i -= 1) {
-            var obstacle = obstacles[i];
-            obstacle.x -= 7;
-            obstacle.element.style.left = obstacle.x + 'px';
-            if (obstacle.x < -28) {
-                if (obstacle.element.parentNode) {
-                    obstacle.element.parentNode.removeChild(obstacle.element);
-                }
-                obstacles.splice(i, 1);
-            } else if (obstacle.x < 80 && obstacle.x + 22 > 48 && rocketY < obstacle.height - 3) {
-                crash();
-                return;
-            }
-        }
-
-        score += 1;
-        var shown = String(score);
-        while (shown.length < 4) shown = '0' + shown;
-        scoreLabel.textContent = 'Score ' + shown;
-    }
-
-    function onKey(event) {
-        var key = event.key;
-        if (key === ' ' || key === 'Space' || key === 'Spacebar' || key === 'ArrowUp' || key === 'w' || key === 'W') {
-            if (event.preventDefault) event.preventDefault();
-            jump();
-        } else if (key === 'r' || key === 'R') {
-            resetGame();
-        }
-    }
-
-    window.addEventListener('keydown', onKey);
-    stage.addEventListener('click', jump);
-    if (jumpButton) jumpButton.addEventListener('click', jump);
-    if (restartButton) restartButton.addEventListener('click', resetGame);
-    resetGame();
-    if (typeof setInterval === 'function') setInterval(updateGame, 40);
-</script>
 </body>
 </html>)html";
 }

@@ -326,9 +326,9 @@ TestResult RunNetworkTests() {
             && html.find("id=\"retry\"") != std::string::npos
             && html.find("href=\"vertex://home\"") != std::string::npos
             && html.find("id=\"game\"") != std::string::npos
-            && html.find("id=\"jump-game\"") != std::string::npos
             && html.find("Rocket Runner") != std::string::npos
-            && html.find("setInterval(updateGame, 40)") != std::string::npos
+            && html.find("<script") == std::string::npos
+            && html.find("setInterval") == std::string::npos
             && html.find(":hover") == std::string::npos
             && html.find(":first-of-type") == std::string::npos;
         const bool escaped = html.find("&quot;quoted&quot;") != std::string::npos

@@ -10,7 +10,6 @@
 #include "js/dom_bridge.h"
 #include "html/parser.h"
 #include "network/resource_cache.h"
-#include "platform/internal_pages.h"
 
 #include <chrono>
 #include <sstream>
@@ -115,6 +114,26 @@ static std::string RunEngineDeepDomRegistrationSnapshot() {
     return ok ? "registered\n" : "script failed\n";
 }
 
+static Node* FindByTag(Node* n, const std::string& tag);
+
+static std::string RunDomCollectionSurvivesGcSnapshot() {
+    std::string html = "<html><body>";
+    for (int i = 0; i < 300; ++i)
+        html += "<div class=\"item\" data-index=\"" + std::to_string(i) + "\"></div>";
+    html += "</body></html>";
+
+    JsEngine engine;
+    auto dom = ParseHtml(html);
+    engine.setDocument(dom, []() {});
+    bool ok = engine.runScript(
+        "var items = document.getElementsByClassName('item');\n"
+        "document.body.setAttribute('data-result', String(items.length));\n",
+        "dom-collection-gc-root");
+    Node* body = FindByTag(dom.get(), "body");
+    return std::string(ok ? "ok:" : "fail:")
+        + (body ? body->attr("data-result") : "missing-body") + "\n";
+}
+
 static Node* FindById(Node* n, const std::string& id);
 
 static std::string RunMediaElementApiSnapshot() {
@@ -213,50 +232,6 @@ static std::string RunScriptCommentSurvivesHtmlExtractionSnapshot() {
     std::string text;
     for (auto& c : p->children) if (c->type == NodeType::Text) text += c->text;
     return "text=" + text + "\n";
-}
-
-static std::string RunOfflineGameControlsSnapshot() {
-    auto dom = ParseHtml(vertex::internal_pages::OfflinePageHtml());
-    JsEngine engine;
-    engine.setDocument(dom, []() {});
-
-    Node* script = FindByTag(dom.get(), "script");
-    if (!script) return "no script node\n";
-
-    std::string source;
-    for (auto& child : script->children)
-        if (child->type == NodeType::Text) source += child->text;
-    if (!engine.runScript(source, "vertex://offline-game")) return "script failed\n";
-
-    Node* message = FindById(dom.get(), "game-message");
-    Node* score = FindById(dom.get(), "score");
-    if (!message || !score) return "missing game controls\n";
-
-    const bool jumped = engine.runScript(
-        "document.getElementById('jump-game').click();", "offline-game-jump");
-    const std::string jumpStyle = message->attr("style");
-    engine.runMacrotasks();
-    engine.runMacrotasks();
-    engine.runMacrotasks();
-    std::string runningScore;
-    for (auto& child : score->children)
-        if (child->type == NodeType::Text) runningScore += child->text;
-    const bool restarted = engine.runScript(
-        "document.getElementById('restart-game').click();", "offline-game-restart");
-
-    std::string messageText;
-    for (auto& child : message->children)
-        if (child->type == NodeType::Text) messageText += child->text;
-    std::string scoreText;
-    for (auto& child : score->children)
-        if (child->type == NodeType::Text) scoreText += child->text;
-
-    return std::string(jumped && restarted ? "ok" : "failed")
-        + " jump=" + jumpStyle
-        + " running=" + runningScore
-        + " restart=" + message->attr("style")
-        + " message=" + messageText
-        + " score=" + scoreText + "\n";
 }
 
 // Exercises the canvas 2D JS surface with no ICanvasSurface wired up (the
@@ -2029,12 +2004,6 @@ TestResult RunJsTests() {
         result);
 
     ExpectEqual(
-        "js/internal-pages/offline-game-visible-controls",
-        RunOfflineGameControlsSnapshot(),
-        "ok jump=display: none running=Score 0001 restart=display: block message=Use Jump or press Space to start. score=Score 0000\n",
-        result);
-
-    ExpectEqual(
         "js/lexer/unterminated-block-comment-is-error",
         FirstLexerError("var ok = 1; /* unterminated"),
         "error:unterminated block comment\n",
@@ -2876,6 +2845,12 @@ TestResult RunJsTests() {
         "js/engine/deep-dom-registration-does-not-overflow",
         RunEngineDeepDomRegistrationSnapshot(),
         "registered\n",
+        result);
+
+    ExpectEqual(
+        "js/dom/collection-wrapper-construction-survives-gc",
+        RunDomCollectionSurvivesGcSnapshot(),
+        "ok:300\n",
         result);
 
     ExpectEqual(

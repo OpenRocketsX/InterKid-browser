@@ -33,6 +33,25 @@ static void addNative(VM& vm, JsObject* obj, const std::string& name, NativeFn f
     obj->setProp(name, JsValue::object(fnObj));
 }
 
+// Native DOM helpers often build an object across several GC allocations
+// before publishing it into a rooted wrapper or returning it to the VM. Keep
+// those in-progress objects alive if an allocation crosses the GC threshold.
+class ScopedGcRoot {
+public:
+    ScopedGcRoot(GC& gc, JsObject* object)
+        : gc_(gc), value_(JsValue::object(object)) {
+        gc_.addRoot(&value_);
+    }
+    ~ScopedGcRoot() { gc_.removeRoot(&value_); }
+
+    ScopedGcRoot(const ScopedGcRoot&) = delete;
+    ScopedGcRoot& operator=(const ScopedGcRoot&) = delete;
+
+private:
+    GC& gc_;
+    JsValue value_;
+};
+
 static JsObject* newArrayWithPrototype(VM& vm) {
     auto* arr = vm.gc().newArray();
     JsValue arrayCtor = vm.getGlobal("Array");
@@ -732,6 +751,7 @@ static void setElementValue(Node* n, const std::string& value) {
 
 static JsObject* makeNodeCollection(VM& vm, const std::vector<Node*>& nodes) {
     auto* arr = newArrayWithPrototype(vm);
+    ScopedGcRoot arrRoot(vm.gc(), arr);
     for (Node* node : nodes) {
         auto shared = getShared(node);
         if (!shared) {
@@ -1751,6 +1771,7 @@ static JsValue wrapNodeInternal(VM& vm, std::shared_ptr<Node> node, bool materia
     // ── attributes map ──
     {
         auto* attrsObj = vm.gc().newObject(ObjKind::Plain);
+        ScopedGcRoot attrsRoot(vm.gc(), attrsObj);
         for (auto& [k, v] : node->attrs) attrsObj->setProp(k, vm.str(v));
         obj->setProp("attributes", JsValue::object(attrsObj));
     }
@@ -1758,6 +1779,7 @@ static JsValue wrapNodeInternal(VM& vm, std::shared_ptr<Node> node, bool materia
     // ── style object ──
     {
         auto* style = vm.gc().newObject(ObjKind::Plain);
+        ScopedGcRoot styleRoot(vm.gc(), style);
         style->domNode = raw;  // Plain+domNode marks a style obj for the set hook
         // Parse inline style
         const std::string& styleStr = node->attr("style");
@@ -1867,6 +1889,7 @@ static JsValue wrapNodeInternal(VM& vm, std::shared_ptr<Node> node, bool materia
     addNativeM("getAttributeNames", NATIVE("getAttributeNames") {
         Node* n = unwrapNode(thisVal);
         auto* names = newArrayWithPrototype(vm);
+        ScopedGcRoot namesRoot(vm.gc(), names);
         if (!n) return JsValue::object(names);
         for (const auto& [k, _] : n->attrs) {
             if (k == kNamespaceAttr) continue;
@@ -1879,6 +1902,7 @@ static JsValue wrapNodeInternal(VM& vm, std::shared_ptr<Node> node, bool materia
     // real class attribute and trigger relayout (used by show/hide toggles).
     {
         auto* cl = vm.gc().newObject(ObjKind::Plain);
+        ScopedGcRoot classListRoot(vm.gc(), cl);
         cl->domNode = raw;  // owner element, so unwrapNode(thisVal) resolves it
         auto syncClassListLength = [](JsObject* list, Node* n) {
             if (list && n)
@@ -1963,7 +1987,9 @@ static JsValue wrapNodeInternal(VM& vm, std::shared_ptr<Node> node, bool materia
     // children / childNodes
     if (materializeRelations) {
         auto* children  = newArrayWithPrototype(vm);
+        ScopedGcRoot childrenRoot(vm.gc(), children);
         auto* childNodes = newArrayWithPrototype(vm);
+        ScopedGcRoot childNodesRoot(vm.gc(), childNodes);
         for (auto& c : node->children) {
             JsValue wrapped = wrapNodeInternal(vm, c, false);
             childNodes->arrayPush(wrapped);
@@ -2042,6 +2068,7 @@ static JsValue wrapNodeInternal(VM& vm, std::shared_ptr<Node> node, bool materia
     // dataset — proxy for data-* attributes.
     {
         auto* ds = vm.gc().newObject(ObjKind::Plain);
+        ScopedGcRoot datasetRoot(vm.gc(), ds);
         JsValue domStringMap = vm.getGlobal("DOMStringMap");
         if (domStringMap.isObject()) {
             JsValue proto = domStringMap.asObject()->getProp("prototype");
@@ -2238,6 +2265,7 @@ static JsValue wrapNodeInternal(VM& vm, std::shared_ptr<Node> node, bool materia
     addNativeM("querySelectorAll", NATIVE("querySelectorAll") {
         Node* n = unwrapNode(thisVal);
         auto* arr = newArrayWithPrototype(vm);
+        ScopedGcRoot arrRoot(vm.gc(), arr);
         if (!n || args.empty()) return JsValue::object(arr);
         for (auto& found : domQueryAll(n, args[0].toString())) arr->arrayPush(wrapNode(vm, found));
         return JsValue::object(arr);
@@ -2253,6 +2281,7 @@ static JsValue wrapNodeInternal(VM& vm, std::shared_ptr<Node> node, bool materia
     addNativeM("getElementsByClassName", NATIVE("getElementsByClassName") {
         Node* n = unwrapNode(thisVal);
         auto* arr = newArrayWithPrototype(vm);
+        ScopedGcRoot arrRoot(vm.gc(), arr);
         if (!n || args.empty()) return JsValue::object(arr);
         for (auto& found : domQueryAll(n, "." + args[0].toString())) arr->arrayPush(wrapNode(vm, found));
         return JsValue::object(arr);
@@ -2260,6 +2289,7 @@ static JsValue wrapNodeInternal(VM& vm, std::shared_ptr<Node> node, bool materia
     addNativeM("getElementsByTagName", NATIVE("getElementsByTagName") {
         Node* n = unwrapNode(thisVal);
         auto* arr = newArrayWithPrototype(vm);
+        ScopedGcRoot arrRoot(vm.gc(), arr);
         if (!n || args.empty()) return JsValue::object(arr);
         for (auto& found : domQueryAll(n, args[0].toString())) arr->arrayPush(wrapNode(vm, found));
         return JsValue::object(arr);
@@ -2310,6 +2340,7 @@ static JsValue wrapNodeInternal(VM& vm, std::shared_ptr<Node> node, bool materia
         };
         visit(root);
         auto* walker = vm.gc().newObject(ObjKind::Plain);
+        ScopedGcRoot walkerRoot(vm.gc(), walker);
         auto wrapAt = [nodes](VM& v, int i) -> JsValue {
             if (i < 0 || i >= (int)nodes->size()) return JsValue::null();
             auto shared = getShared((*nodes)[(size_t)i]);
@@ -2704,6 +2735,7 @@ static JsValue wrapNodeInternal(VM& vm, std::shared_ptr<Node> node, bool materia
         });
         addNativeM("createSVGPoint", NATIVE("createSVGPoint") {
             auto* point = vm.gc().newObject(ObjKind::Plain);
+            ScopedGcRoot pointRoot(vm.gc(), point);
             point->setProp("x", JsValue::number(0));
             point->setProp("y", JsValue::number(0));
             addNative(vm, point, "matrixTransform", [point](VM&, JsValue, std::vector<JsValue>) -> JsValue {
@@ -3805,7 +3837,8 @@ void registerDom(VM& vm, std::shared_ptr<Node> docNode,
             return true;
         }
         if (key == "children" || key == "childNodes") {
-        auto* arr = newArrayWithPrototype(*vmPtr);
+            auto* arr = newArrayWithPrototype(*vmPtr);
+            ScopedGcRoot arrRoot(vmPtr->gc(), arr);
             for (auto& c : n->children) {
                 if (key == "children" && c->type != NodeType::Element) continue;
                 arr->arrayPush(wrapNodeInternal(*vmPtr, c, false));
