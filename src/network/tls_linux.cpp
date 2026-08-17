@@ -86,6 +86,11 @@ bool TlsConnection::Handshake(const std::string& host, int timeoutMs) {
     if (mbedtls_ssl_config_defaults(&im.sslConf, MBEDTLS_SSL_IS_CLIENT,
                                      MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_PRESET_DEFAULT) != 0)
         return false;
+    // The pinned mbedTLS 3.6.2 TLS 1.3 client returns
+    // MBEDTLS_ERR_SSL_INTERNAL_ERROR against common Cloudflare endpoints.
+    // Keep Linux browsing reliable on its fully verified TLS 1.2 path until
+    // the TLS 1.3 configuration has equivalent real-site coverage.
+    mbedtls_ssl_conf_max_tls_version(&im.sslConf, MBEDTLS_SSL_VERSION_TLS1_2);
     mbedtls_ssl_conf_authmode(&im.sslConf, MBEDTLS_SSL_VERIFY_REQUIRED);
     mbedtls_ssl_conf_ca_chain(&im.sslConf, caChain, nullptr);
     mbedtls_ssl_conf_rng(&im.sslConf, mbedtls_ctr_drbg_random, &im.ctrDrbg);
