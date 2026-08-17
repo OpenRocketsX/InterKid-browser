@@ -5,6 +5,7 @@
 #include "layout/layout_engine.h"
 #include "platform/browser_core.h"
 #include "platform/form_state.h"
+#include "platform/internal_pages.h"
 #include "render/animation.h"
 
 #include <sstream>
@@ -1561,6 +1562,45 @@ TestResult RunLayoutEngineTests() {
             actual,
             "replaced __canvas__ 300x150\n"
             "100x75\n",
+            result);
+    }
+
+    // Keep the built-in recovery page on the engine's conservative CSS path.
+    // This is a real parse/layout pass, so unsupported selectors or collapsed
+    // controls are caught before they reach a platform shell.
+    {
+        auto offlineDom = ParseHtml(vertex::internal_pages::OfflinePageHtml());
+        std::function<Node*(Node*)> findStyle = [&](Node* node) -> Node* {
+            if (!node) return nullptr;
+            if (node->type == NodeType::Element && node->tagName == "style") return node;
+            for (auto& child : node->children)
+                if (Node* found = findStyle(child.get())) return found;
+            return nullptr;
+        };
+        std::string css;
+        if (Node* style = findStyle(offlineDom.get())) {
+            for (auto& child : style->children)
+                if (child->type == NodeType::Text) css += child->text;
+        }
+        auto offlineSheet = ParseStylesheet(css);
+        LayoutInput offlineInput;
+        offlineInput.document = offlineDom.get();
+        offlineInput.sheet = &offlineSheet;
+        offlineInput.measure = &measure;
+        offlineInput.viewportW = 800.f;
+        offlineInput.viewportH = 600.f;
+        auto offlineLayout = LayoutDocument(offlineInput);
+        auto* game = FindEngineBoxById(offlineLayout.get(), "game");
+        auto* rocket = FindEngineBoxById(offlineLayout.get(), "rocket");
+        auto* jump = FindEngineBoxById(offlineLayout.get(), "jump-game");
+        auto* restart = FindEngineBoxById(offlineLayout.get(), "restart-game");
+        const bool usable = game && rocket && jump && restart
+            && game->contentW > 200.f && game->contentH > 100.f
+            && jump->contentW > 0.f && jump->contentH > 0.f
+            && restart->contentW > 0.f && restart->contentH > 0.f;
+        ExpectEqual("layout-engine/internal-offline-page-controls-are-visible",
+            usable ? "visible\n" : "missing-or-collapsed\n",
+            "visible\n",
             result);
     }
     return result;
