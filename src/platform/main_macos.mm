@@ -859,7 +859,7 @@ int main(int argc, const char* argv[]) {
                     : FetchResourceCached(url, 12 * 1024 * 1024, ResourceKind::Document);
                 auto* page = new Page();
                 page->url = url;
-                if (res.success && !res.body.empty()) {
+                if (res.success) {
                     page->dom = ParseHtml(DecodeTextToUtf8(res.body, res.contentType, true));
                     LoadExternalStylesheets(page->dom, page->url);
                 } else {

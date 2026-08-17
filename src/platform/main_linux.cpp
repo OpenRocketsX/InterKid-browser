@@ -1086,7 +1086,7 @@ static void platformFetch(int tabIdx, FetchRequest request) {
             : FetchResourceCached(url, 12 * 1024 * 1024, ResourceKind::Document);
         auto* page = new Page();
         page->url = url;
-        if (res.success && !res.body.empty()) {
+        if (res.success) {
             page->dom = ParseHtml(DecodeTextToUtf8(res.body, res.contentType, true));
             if (!res.finalUrl.empty() && res.finalUrl != url)
                 page->url = res.finalUrl;
