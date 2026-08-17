@@ -321,12 +321,16 @@ TestResult RunNetworkTests() {
         const std::string failedUrl = "https://example.test/?q=\"quoted\"&x=<tag>";
         const std::string html = vertex::internal_pages::OfflinePageHtml(
             failedUrl, "connection <reset>", 0);
-        const bool controls = html.find("Connection lost") != std::string::npos
+        const bool controls = html.find("Page unavailable") != std::string::npos
+            && html.find("Network error") != std::string::npos
             && html.find("id=\"retry\"") != std::string::npos
             && html.find("href=\"vertex://home\"") != std::string::npos
             && html.find("id=\"game\"") != std::string::npos
+            && html.find("id=\"jump-game\"") != std::string::npos
             && html.find("Rocket Runner") != std::string::npos
-            && html.find("requestAnimationFrame") != std::string::npos;
+            && html.find("setInterval(updateGame, 40)") != std::string::npos
+            && html.find(":hover") == std::string::npos
+            && html.find(":first-of-type") == std::string::npos;
         const bool escaped = html.find("&quot;quoted&quot;") != std::string::npos
             && html.find("&lt;tag&gt;") != std::string::npos
             && html.find("connection &lt;reset&gt;") != std::string::npos;
