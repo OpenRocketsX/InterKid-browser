@@ -24,3 +24,6 @@ models/
 *.gguf
 *.safetensors
 third_party/vertex_arti/target/
+/build/
+/build-debug/
+/cmake-build-*/
