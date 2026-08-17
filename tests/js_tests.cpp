@@ -235,6 +235,12 @@ static std::string RunOfflineGameControlsSnapshot() {
     const bool jumped = engine.runScript(
         "document.getElementById('jump-game').click();", "offline-game-jump");
     const std::string jumpStyle = message->attr("style");
+    engine.runMacrotasks();
+    engine.runMacrotasks();
+    engine.runMacrotasks();
+    std::string runningScore;
+    for (auto& child : score->children)
+        if (child->type == NodeType::Text) runningScore += child->text;
     const bool restarted = engine.runScript(
         "document.getElementById('restart-game').click();", "offline-game-restart");
 
@@ -247,6 +253,7 @@ static std::string RunOfflineGameControlsSnapshot() {
 
     return std::string(jumped && restarted ? "ok" : "failed")
         + " jump=" + jumpStyle
+        + " running=" + runningScore
         + " restart=" + message->attr("style")
         + " message=" + messageText
         + " score=" + scoreText + "\n";
@@ -2024,7 +2031,7 @@ TestResult RunJsTests() {
     ExpectEqual(
         "js/internal-pages/offline-game-visible-controls",
         RunOfflineGameControlsSnapshot(),
-        "ok jump=display: none restart=display: block message=Use Jump or press Space to start. score=Score 0000\n",
+        "ok jump=display: none running=Score 0001 restart=display: block message=Use Jump or press Space to start. score=Score 0000\n",
         result);
 
     ExpectEqual(
