@@ -1628,6 +1628,9 @@ static void ShowInternalPage(const std::string& url,
                              const std::string& html,
                              bool pushHistory = true) {
     Tab& tab = CurTab();
+    g_hoverNode = nullptr;
+    SetCssHoverNode(nullptr);
+    SetCssFocusNode(nullptr);
     tab.page.reset(new Page{ url, ParseHtml(html), {} });
     tab.url = url;
     tab.title = title;
@@ -1699,6 +1702,9 @@ static void Navigate(int tabIdx, const std::string& rawUrl, bool pushHistory) {
         ExitWindowFullscreen(false);
     Tab& tab = g_tabs[tabIdx];
     if (tab.loading) return;
+    g_hoverNode = nullptr;
+    SetCssHoverNode(nullptr);
+    SetCssFocusNode(nullptr);
     g_renderer.ClearTextSelection();
     ClearPendingPageScriptsForTab(tabIdx);
 
@@ -2470,6 +2476,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 
         if (idx >= 0 && idx < (int)g_tabs.size()) {
             Tab& tab   = g_tabs[idx];
+            g_hoverNode = nullptr;
+            SetCssHoverNode(nullptr);
+            SetCssFocusNode(nullptr);
             tab.page.reset(p);
             tab.scrollY = 0.f;
             tab.loading = false;

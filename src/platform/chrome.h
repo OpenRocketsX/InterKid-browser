@@ -21,6 +21,7 @@
 
 #include "platform/browser_core.h"
 #include "platform/internal_pages.h"
+#include "css/stylesheet.h"
 #include "platform/form_state.h"
 #include "platform/updater.h"
 #include "js/engine.h"
@@ -201,6 +202,8 @@ public:
     ~BrowserChrome() { if (alive_) *alive_ = false; }
 
     void init() {
+        SetCssHoverNode(nullptr);
+        SetCssFocusNode(nullptr);
         state.tabs.emplace_back();
         state.tabs[0].page = std::make_shared<Page>();
         state.tabs[0].page->url = "vertex://home";
@@ -223,6 +226,8 @@ public:
 
         std::string url = rawUrl;
         if (url == "vertex://home") {
+            SetCssHoverNode(nullptr);
+            SetCssFocusNode(nullptr);
             tab.page = std::make_shared<Page>();
             tab.page->url = url;
             tab.page->dom = ParseHtml(HomePageHtml());
@@ -240,6 +245,8 @@ public:
 
         vertex::internal_pages::PageContent internal;
         if (vertex::internal_pages::Resolve(url, internal)) {
+            SetCssHoverNode(nullptr);
+            SetCssFocusNode(nullptr);
             tab.page = std::make_shared<Page>();
             tab.page->url = internal.url;
             tab.page->dom = ParseHtml(internal.html);
@@ -299,6 +306,8 @@ public:
     void onPageReady(int tabIdx, Page* page) {
         if (tabIdx < 0 || tabIdx >= (int)state.tabs.size()) { delete page; return; }
         Tab& tab = state.tabs[tabIdx];
+        SetCssHoverNode(nullptr);
+        SetCssFocusNode(nullptr);
         tab.page = std::shared_ptr<Page>(page);
         tab.loading = false;
         state.loading = false;

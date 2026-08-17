@@ -917,6 +917,15 @@ float Renderer::Paint(const std::shared_ptr<Node>& doc,
             // changed; scrolling reuses the cached tree.
             extern const Node* g_hoverNode;
             static const Node* prevHover = nullptr;
+            const bool documentChanged = m_layoutDocKey != doc.get();
+            if (documentChanged) {
+                // Hover/focus nodes belong to the previous DOM. Never carry
+                // raw Node pointers across a document replacement.
+                g_hoverNode = nullptr;
+                prevHover = nullptr;
+                SetCssHoverNode(nullptr);
+                SetCssFocusNode(nullptr);
+            }
             bool hoverChanged = (g_hoverNode != prevHover);
             bool hoverMayAffectStyle = hoverChanged && sheet && m_cachedHoverAffectsLayout;
             std::map<const Node*, ComputedStyle> oldStyles;
