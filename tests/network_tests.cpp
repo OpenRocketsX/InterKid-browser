@@ -316,6 +316,8 @@ TestResult RunNetworkTests() {
     {
         vertex::internal_pages::PageContent page;
         const bool route = vertex::internal_pages::Resolve("vertex://offline-game", page);
+        vertex::internal_pages::PageContent notFound;
+        const bool notFoundRoute = vertex::internal_pages::Resolve("vertex://404", notFound);
         const std::string failedUrl = "https://example.test/?q=\"quoted\"&x=<tag>";
         const std::string html = vertex::internal_pages::OfflinePageHtml(
             failedUrl, "connection <reset>", 0);
@@ -328,9 +330,14 @@ TestResult RunNetworkTests() {
         const bool escaped = html.find("&quot;quoted&quot;") != std::string::npos
             && html.find("&lt;tag&gt;") != std::string::npos
             && html.find("connection &lt;reset&gt;") != std::string::npos;
+        const std::string statusHtml = vertex::internal_pages::OfflinePageHtml(
+            failedUrl, "Not found", 404);
+        const bool status = statusHtml.find("Page unavailable") != std::string::npos
+            && statusHtml.find("HTTP 404") != std::string::npos;
         ExpectEqual("network/internal-pages/offline-route-and-safe-game-markup",
-            std::string(route && page.html.find("Rocket Runner") != std::string::npos
-                        && controls && escaped ? "ok\n" : "fail\n"),
+            std::string(route && notFoundRoute
+                        && page.html.find("Rocket Runner") != std::string::npos
+                        && controls && escaped && status ? "ok\n" : "fail\n"),
             "ok\n", result);
     }
 
