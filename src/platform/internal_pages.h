@@ -171,7 +171,6 @@ h1 { margin: 0 0 6px; color: #171a1f; font-size: 26px; line-height: 1.2; }
 </section>
 </main>
 <script>
-(function () {
     var stage = document.getElementById('game');
     var rocket = document.getElementById('rocket');
     var obstacleLayer = document.getElementById('obstacles');
@@ -179,8 +178,6 @@ h1 { margin: 0 0 6px; color: #171a1f; font-size: 26px; line-height: 1.2; }
     var message = document.getElementById('game-message');
     var jumpButton = document.getElementById('jump-game');
     var restartButton = document.getElementById('restart-game');
-    if (!stage || !rocket || !obstacleLayer || !scoreLabel || !message) return;
-
     var rocketY = 0;
     var velocity = 0;
     var score = 0;
@@ -300,7 +297,6 @@ h1 { margin: 0 0 6px; color: #171a1f; font-size: 26px; line-height: 1.2; }
     if (restartButton) restartButton.addEventListener('click', resetGame);
     resetGame();
     if (typeof setInterval === 'function') setInterval(updateGame, 40);
-})();
 </script>
 </body>
 </html>)html";

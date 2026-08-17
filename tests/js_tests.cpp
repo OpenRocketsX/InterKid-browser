@@ -2024,7 +2024,7 @@ TestResult RunJsTests() {
     ExpectEqual(
         "js/internal-pages/offline-game-visible-controls",
         RunOfflineGameControlsSnapshot(),
-        "ok jump=display:none restart=display:block message=Use Jump or press Space to start. score=Score 0000\n",
+        "ok jump=display: none restart=display: block message=Use Jump or press Space to start. score=Score 0000\n",
         result);
 
     ExpectEqual(
