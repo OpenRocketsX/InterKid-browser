@@ -1645,17 +1645,6 @@ static void ShowInternalPage(const std::string& url,
     InvalidateRect(g_hwnd, NULL, FALSE);
 }
 
-static void ShowOfflinePage(const std::string& failedUrl,
-                            const std::string& error,
-                            int httpStatus,
-                            bool pushHistory = true) {
-    const std::string title = httpStatus == 404 ? "Page unavailable" : "Connection lost";
-    ShowInternalPage(failedUrl.empty() ? "vertex://offline-game" : failedUrl,
-                     title,
-                     vertex::internal_pages::OfflinePageHtml(failedUrl, error, httpStatus),
-                     pushHistory);
-}
-
 static void ShowDownloadsPage(bool pushHistory = true) {
     ShowInternalPage("vertex://downloads", "Downloads", DownloadsPageHtml(), pushHistory);
 }

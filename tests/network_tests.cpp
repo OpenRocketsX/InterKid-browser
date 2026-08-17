@@ -12,6 +12,7 @@
 #include "html/parser.h"
 #include "html/resources.h"
 #include "platform/form_state.h"
+#include "platform/internal_pages.h"
 
 #include <atomic>
 #include <chrono>
@@ -311,6 +312,27 @@ static Node* FindScriptById(Node* root, const std::string& id) {
 
 TestResult RunNetworkTests() {
     TestResult result;
+
+    {
+        vertex::internal_pages::PageContent page;
+        const bool route = vertex::internal_pages::Resolve("vertex://offline-game", page);
+        const std::string failedUrl = "https://example.test/?q=\"quoted\"&x=<tag>";
+        const std::string html = vertex::internal_pages::OfflinePageHtml(
+            failedUrl, "connection <reset>", 0);
+        const bool controls = html.find("Connection lost") != std::string::npos
+            && html.find("id=\"retry\"") != std::string::npos
+            && html.find("href=\"vertex://home\"") != std::string::npos
+            && html.find("id=\"game\"") != std::string::npos
+            && html.find("Rocket Runner") != std::string::npos
+            && html.find("requestAnimationFrame") != std::string::npos;
+        const bool escaped = html.find("&quot;quoted&quot;") != std::string::npos
+            && html.find("&lt;tag&gt;") != std::string::npos
+            && html.find("connection &lt;reset&gt;") != std::string::npos;
+        ExpectEqual("network/internal-pages/offline-route-and-safe-game-markup",
+            std::string(route && page.html.find("Rocket Runner") != std::string::npos
+                        && controls && escaped ? "ok\n" : "fail\n"),
+            "ok\n", result);
+    }
 
     {
         auto res = FetchUrl("data:text/plain,Hello%20World%21");

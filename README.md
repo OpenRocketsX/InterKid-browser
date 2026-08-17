@@ -44,6 +44,7 @@ vertex://downloads
 vertex://settings
 vertex://site-data
 vertex://platform-features
+vertex://offline-game
 ```
 
 `vertex://platform-features` is the messy debug page for platform APIs: fullscreen, pointer lock, PiP, file picker, clipboard, notifications, gamepads, permissions, sensors, wake lock, and other browser-shaped things.

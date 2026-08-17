@@ -328,7 +328,7 @@ kbd {
 inline bool Resolve(const std::string& url, PageContent& page) {
     if (url != "vertex://offline-game" && url != "vertex://404") return false;
     page.url = url;
-    page.title = url == "vertex://404" ? "Page unavailable" : "Offline game";
+    page.title = url == "vertex://404" ? "Page unavailable" : "Connection lost";
     page.html = OfflinePageHtml();
     return true;
 }
