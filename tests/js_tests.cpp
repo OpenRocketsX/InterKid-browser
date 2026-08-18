@@ -116,6 +116,7 @@ static std::string RunEngineDeepDomRegistrationSnapshot() {
 }
 
 static Node* FindByTag(Node* n, const std::string& tag);
+static Node* FindById(Node* n, const std::string& id);
 
 static std::string RunDomCollectionSurvivesGcSnapshot() {
     std::string html = "<html><body>";
@@ -182,8 +183,6 @@ static std::string RunRocketRunnerFixedIdPatternSnapshot() {
     return std::string(scoreAfterTick == "Score 1" && keyboardMovedShip
                        && restarted && buttonMovedShip && keyRestarted ? "ok\n" : "fail\n");
 }
-
-static Node* FindById(Node* n, const std::string& id);
 
 static std::string RunMediaElementApiSnapshot() {
     JsEngine engine;
@@ -2900,6 +2899,12 @@ TestResult RunJsTests() {
         "js/dom/collection-wrapper-construction-survives-gc",
         RunDomCollectionSurvivesGcSnapshot(),
         "ok:300\n",
+        result);
+
+    ExpectEqual(
+        "js/dom/rocket-runner-fixed-id-timer-keyboard-and-buttons",
+        RunRocketRunnerFixedIdPatternSnapshot(),
+        "ok\n",
         result);
 
     ExpectEqual(

@@ -1606,13 +1606,16 @@ TestResult RunLayoutEngineTests() {
         auto* rocket = FindEngineBoxById(offlineLayout.get(), "rocket");
         auto* retry = FindEngineBoxById(offlineLayout.get(), "retry");
         auto* home = FindEngineBoxById(offlineLayout.get(), "home");
+        auto* play = FindEngineBoxById(offlineLayout.get(), "play-game");
         auto* obstacle = FindEngineBoxByClass(offlineLayout.get(), "obstacle-one");
-        const bool usable = game && rocket && retry && home
+        const bool usable = game && rocket && retry && home && play
             && game->contentW > 200.f && game->contentH > 100.f
             && retry->contentW > 0.f && retry->contentH > 0.f
             && home->contentW > 0.f && home->contentH > 0.f
-            && retry->href == "vertex://offline-game"
+            && play->contentW > 0.f && play->contentH > 0.f
+            && retry->href == "vertex://home"
             && home->href == "vertex://home"
+            && play->href == "vertex://offline-game"
             && obstacle;
         ExpectEqual("layout-engine/internal-offline-page-controls-are-visible",
             usable ? "visible\n" : "missing-or-collapsed\n",

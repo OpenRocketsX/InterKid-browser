@@ -328,6 +328,8 @@ TestResult RunNetworkTests() {
             && html.find("id=\"game\"") != std::string::npos
             && html.find("Rocket Runner") != std::string::npos
             && html.find("Static preview") != std::string::npos
+            && html.find("id=\"play-game\"") != std::string::npos
+            && html.find("href=\"vertex://offline-game\"") != std::string::npos
             && html.find("<script") == std::string::npos
             && html.find("setInterval") == std::string::npos
             && html.find("requestAnimationFrame") == std::string::npos
@@ -341,10 +343,27 @@ TestResult RunNetworkTests() {
             failedUrl, "Not found", 404);
         const bool status = statusHtml.find("Page unavailable") != std::string::npos
             && statusHtml.find("HTTP 404") != std::string::npos;
-        ExpectEqual("network/internal-pages/offline-route-and-safe-game-markup",
+        const bool game = page.title == "Rocket Runner"
+            && page.html.find("<script>") != std::string::npos
+            && page.html.find("setInterval(tick, 50)") != std::string::npos
+            && page.html.find("document.getElementById") != std::string::npos
+            && page.html.find("id=\"rr-ship\"") != std::string::npos
+            && page.html.find("id=\"rr-obstacle\"") != std::string::npos
+            && page.html.find("id=\"rr-score\"") != std::string::npos
+            && page.html.find("id=\"rr-status\"") != std::string::npos
+            && page.html.find("id=\"rr-jump\"") != std::string::npos
+            && page.html.find("id=\"rr-restart\"") != std::string::npos
+            && page.html.find("getElementsByClassName") == std::string::npos
+            && page.html.find("querySelectorAll") == std::string::npos
+            && page.html.find("classList") == std::string::npos
+            && page.html.find("dataset") == std::string::npos
+            && page.html.find("requestAnimationFrame") == std::string::npos;
+        const bool staticNotFound = notFound.html.find("<script") == std::string::npos
+            && notFound.html.find("HTTP 404") != std::string::npos;
+        ExpectEqual("network/internal-pages/playable-route-and-static-recovery-markup",
             std::string(route && notFoundRoute
-                        && page.html.find("Rocket Runner") != std::string::npos
-                        && controls && escaped && status ? "ok\n" : "fail\n"),
+                        && game && staticNotFound && controls && escaped && status
+                        ? "ok\n" : "fail\n"),
             "ok\n", result);
     }
 
