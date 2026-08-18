@@ -256,8 +256,7 @@ h1 { margin: 0 0 5px; color: #171a1f; font-size: 25px; line-height: 1.2; }
 </section>
 </main>
 <script>
-(function () {
-    try {
+try {
         var ship = document.getElementById('rr-ship');
         var obstacle = document.getElementById('rr-obstacle');
         var scoreNode = document.getElementById('rr-score');
@@ -266,68 +265,72 @@ h1 { margin: 0 0 5px; color: #171a1f; font-size: 25px; line-height: 1.2; }
         var restartButton = document.getElementById('rr-restart');
         if (!ship || !obstacle || !scoreNode || !statusNode || !jumpButton || !restartButton) return;
 
-        var y = 0;
-        var velocity = 0;
-        var obstacleX = 700;
-        var score = 0;
-        var alive = true;
-
-        function draw() {
-            ship.style.bottom = String(24 + y) + 'px';
-            obstacle.style.left = String(obstacleX) + 'px';
-            scoreNode.textContent = 'Score ' + String(score);
-        }
-
-        function restart() {
-            y = 0;
-            velocity = 0;
-            obstacleX = 700;
-            score = 0;
-            alive = true;
-            statusNode.textContent = 'Running';
-            draw();
-        }
-
-        function jump() {
-            if (alive && y <= 2) velocity = 11;
-        }
+        window.rrY = 0;
+        window.rrVelocity = 0;
+        window.rrObstacleX = 700;
+        window.rrScore = 0;
+        window.rrAlive = true;
 
         function tick() {
-            if (!alive) return;
-            velocity = velocity - 1;
-            y = y + velocity;
-            if (y < 0) {
-                y = 0;
-                velocity = 0;
+            if (!window.rrAlive) return;
+            window.rrVelocity = window.rrVelocity - 1;
+            window.rrY = window.rrY + window.rrVelocity;
+            if (window.rrY < 0) {
+                window.rrY = 0;
+                window.rrVelocity = 0;
             }
-            obstacleX = obstacleX - 7;
-            score = score + 1;
-            if (obstacleX < -30) obstacleX = 700;
-            if (obstacleX < 90 && obstacleX > 42 && y < 28) {
-                alive = false;
+            window.rrObstacleX = window.rrObstacleX - 7;
+            window.rrScore = window.rrScore + 1;
+            if (window.rrObstacleX < -30) window.rrObstacleX = 700;
+            if (window.rrObstacleX < 90 && window.rrObstacleX > 42 && window.rrY < 28) {
+                window.rrAlive = false;
                 statusNode.textContent = 'Crashed - press R or Restart';
             }
-            draw();
+            ship.style.bottom = (24 + window.rrY) + 'px';
+            obstacle.style.left = window.rrObstacleX + 'px';
+            scoreNode.textContent = 'Score ' + window.rrScore;
         }
 
-        jumpButton.onclick = jump;
-        restartButton.onclick = restart;
+        jumpButton.onclick = function () {
+            if (window.rrAlive && window.rrY <= 2) window.rrVelocity = 11;
+        };
+        restartButton.onclick = function () {
+            window.rrY = 0;
+            window.rrVelocity = 0;
+            window.rrObstacleX = 700;
+            window.rrScore = 0;
+            window.rrAlive = true;
+            statusNode.textContent = 'Running';
+            ship.style.bottom = '24px';
+            obstacle.style.left = '700px';
+            scoreNode.textContent = 'Score 0';
+        };
         window.addEventListener('keydown', function (event) {
             var key = event.key;
             if (key === ' ' || key === 'ArrowUp' || key === 'w' || key === 'W') {
                 event.preventDefault();
-                jump();
+                if (window.rrAlive && window.rrY <= 2) window.rrVelocity = 11;
             } else if (key === 'r' || key === 'R') {
-                restart();
+                window.rrY = 0;
+                window.rrVelocity = 0;
+                window.rrObstacleX = 700;
+                window.rrScore = 0;
+                window.rrAlive = true;
+                statusNode.textContent = 'Running';
+                ship.style.bottom = '24px';
+                obstacle.style.left = '700px';
+                scoreNode.textContent = 'Score 0';
             }
         });
-        restart();
+        statusNode.textContent = 'Running';
+        ship.style.bottom = '24px';
+        obstacle.style.left = '700px';
+        scoreNode.textContent = 'Score 0';
         setInterval(tick, 50);
-    } catch (error) {
-        var fallbackStatus = document.getElementById('rr-status');
-        if (fallbackStatus) fallbackStatus.textContent = 'Game unavailable; navigation controls remain available.';
-    }
-}());
+} catch (error) {
+    var fallbackStatus = document.getElementById('rr-status');
+    if (fallbackStatus) fallbackStatus.textContent = 'Game unavailable; navigation controls remain available.';
+}
 </script>
 </body>
 </html>)html";
