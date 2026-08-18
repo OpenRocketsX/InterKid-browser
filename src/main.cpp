@@ -3293,6 +3293,18 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int nShow) {
                 }
             }
 
+            if (!handled && !ctrl && !alt && !g_formState.focusedInput
+                && GetFocus() != g_hwndUrl
+                && (msg.wParam == VK_SPACE || msg.wParam == VK_UP
+                    || msg.wParam == 'W' || msg.wParam == 'R')) {
+                if (msg.wParam == VK_SPACE) g_chrome.dispatchKeyDown(32, " ");
+                else if (msg.wParam == VK_UP) g_chrome.dispatchKeyDown(38, "ArrowUp");
+                else if (msg.wParam == 'W') g_chrome.dispatchKeyDown(87, "w");
+                else g_chrome.dispatchKeyDown(82, "r");
+                InvalidateRect(g_hwnd, NULL, FALSE);
+                handled = true;
+            }
+
             if (handled) continue;
         }
 

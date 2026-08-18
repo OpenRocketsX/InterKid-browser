@@ -556,7 +556,20 @@ static Stylesheet CollectCSS(const Node* root) {
         [self setNeedsDisplay:YES];
         return;
     }
-    if (!g_formState.focusedInput) { [super keyDown:event]; return; }
+    if (!g_formState.focusedInput) {
+        unsigned short pageKeyCode = [event keyCode];
+        if (!cmd && (pageKeyCode == 49 || pageKeyCode == 126
+                     || [chars isEqualToString:@"w"] || [chars isEqualToString:@"r"])) {
+            if (pageKeyCode == 49) g_chrome.dispatchKeyDown(32, " ");
+            else if (pageKeyCode == 126) g_chrome.dispatchKeyDown(38, "ArrowUp");
+            else if ([chars isEqualToString:@"w"]) g_chrome.dispatchKeyDown(87, "w");
+            else g_chrome.dispatchKeyDown(82, "r");
+            [self setNeedsDisplay:YES];
+            return;
+        }
+        [super keyDown:event];
+        return;
+    }
     unsigned short kc = [event keyCode];
     if (kc == 36) { // Return
         SubmitFormFromControl(g_formState.focusedInput);

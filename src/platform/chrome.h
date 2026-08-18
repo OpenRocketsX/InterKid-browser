@@ -354,6 +354,10 @@ public:
             || HasPendingResourceCompletions() || HasOpenWebSockets();
     }
 
+    void dispatchKeyDown(int keyCode, const std::string& key) {
+        state.js.dispatchKeyDown(keyCode, key);
+    }
+
     void back() {
         Tab& tab = state.curTab();
         if (tab.histIdx > 0)

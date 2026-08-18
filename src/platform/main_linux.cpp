@@ -1377,7 +1377,20 @@ static void OnKeyPress(xcb_keycode_t kc, uint16_t state) {
         return;
     }
 
-    if (!g_formState.focusedInput) return;
+    if (!g_formState.focusedInput) {
+        if (!ctrl && (sym == XK_space || sym == XK_Up
+                      || sym == 'w' || sym == 'W' || sym == 'r' || sym == 'R')) {
+            int keyCode = 0;
+            std::string key;
+            if (sym == XK_space) { keyCode = 32; key = " "; }
+            else if (sym == XK_Up) { keyCode = 38; key = "ArrowUp"; }
+            else if (sym == 'w' || sym == 'W') { keyCode = 87; key = (sym == 'W' ? "W" : "w"); }
+            else { keyCode = 82; key = (sym == 'R' ? "R" : "r"); }
+            g_chrome.dispatchKeyDown(keyCode, key);
+            RequestRedraw();
+        }
+        return;
+    }
     if (sym == XK_Return) {
         SubmitFormFromControl(g_formState.focusedInput);
         RequestRedraw();
