@@ -68,6 +68,7 @@ constexpr xcb_keysym_t XK_Escape    = 0xFF1B;
 constexpr xcb_keysym_t XK_Delete    = 0xFFFF;
 constexpr xcb_keysym_t XK_Home      = 0xFF50;
 constexpr xcb_keysym_t XK_Left      = 0xFF51;
+constexpr xcb_keysym_t XK_Up        = 0xFF52;
 constexpr xcb_keysym_t XK_Right     = 0xFF53;
 constexpr xcb_keysym_t XK_End       = 0xFF57;
 constexpr xcb_keysym_t XK_F11       = 0xFFC8;
@@ -1378,11 +1379,11 @@ static void OnKeyPress(xcb_keycode_t kc, uint16_t state) {
     }
 
     if (!g_formState.focusedInput) {
-        if (!ctrl && (sym == XK_space || sym == XK_Up
+        if (!ctrl && (sym == ' ' || sym == XK_Up
                       || sym == 'w' || sym == 'W' || sym == 'r' || sym == 'R')) {
             int keyCode = 0;
             std::string key;
-            if (sym == XK_space) { keyCode = 32; key = " "; }
+            if (sym == ' ') { keyCode = 32; key = " "; }
             else if (sym == XK_Up) { keyCode = 38; key = "ArrowUp"; }
             else if (sym == 'w' || sym == 'W') { keyCode = 87; key = (sym == 'W' ? "W" : "w"); }
             else { keyCode = 82; key = (sym == 'R' ? "R" : "r"); }
