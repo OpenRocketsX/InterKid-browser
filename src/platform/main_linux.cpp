@@ -1242,36 +1242,35 @@ static void OnButtonPress(uint8_t button, int x, int y) {
             return;
         }
         g_formState.blur();
-        
-        // Check for download links
-        if (g_layoutRoot) {
-            for (const auto& hit : g_hits) {
-                if (x >= hit.x && x <= hit.x + hit.w && y >= hit.y && y <= hit.y + hit.h) {
-                    if (hit.download) {
-                        // Start download in background thread
-                        std::string url = hit.href;
-                        std::string downloadAttr = hit.downloadName;
-                        std::thread([url, downloadAttr]() {
-                            auto res = FetchUrl(url);
-                            auto rec = vertex::downloads::SaveFetchedBody(url, res, downloadAttr);
-                            PostToMainThread([rec]() {
-                                AppendDownloadRecord(rec);
-                            });
-                        }).detach();
-                        return;
-                    }
-                    break;
-                }
-            }
-        }
-        
-        std::string href = HitTestLink((float)x, (float)y);
-        if (!href.empty()) {
-            g_chrome.navigate(href);
-            return;
-        }
-        RequestRedraw();
     }
+
+    // Hit regions describe the last visible frame and remain valid while a
+    // hover-triggered relayout is pending. Do not drop a click just because
+    // g_layoutRoot was temporarily invalidated between pointer move and press.
+    for (const auto& hit : g_hits) {
+        if (x >= hit.x && x <= hit.x + hit.w && y >= hit.y && y <= hit.y + hit.h) {
+            if (hit.download) {
+                std::string url = hit.href;
+                std::string downloadAttr = hit.downloadName;
+                std::thread([url, downloadAttr]() {
+                    auto res = FetchUrl(url);
+                    auto rec = vertex::downloads::SaveFetchedBody(url, res, downloadAttr);
+                    PostToMainThread([rec]() {
+                        AppendDownloadRecord(rec);
+                    });
+                }).detach();
+                return;
+            }
+            break;
+        }
+    }
+
+    std::string href = HitTestLink((float)x, (float)y);
+    if (!href.empty()) {
+        g_chrome.navigate(href);
+        return;
+    }
+    RequestRedraw();
 }
 
 static void NavigateFromUrlBar() {

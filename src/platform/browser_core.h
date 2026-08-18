@@ -140,55 +140,60 @@ inline const std::string& HomePageHtml() {
 <style>
 body {
     font-family: 'Segoe UI', system-ui, sans-serif;
-    background: #f2e8d6;
-    color: #211c16;
+    background: #f4f6f8;
+    color: #20242a;
     margin: 0;
-    padding: 36px 0 52px;
+    padding: 24px 0 36px;
 }
-.w { width: 720px; margin-left: auto; margin-right: auto; }
-.brand { text-align: center; margin-bottom: 22px; }
+.w { width: 88%; max-width: 820px; margin-left: auto; margin-right: auto; }
+.brand {
+    background: #ffffff; border: 1px solid #d7dce3; border-radius: 6px;
+    padding: 18px 20px; margin-bottom: 12px;
+}
 .mark {
-    display: block; background: #315cf6; color: white;
-    border-radius: 6px; padding: 10px 0; font-weight: 800;
-    font-size: 14px; width: 104px; margin-left: auto; margin-right: auto;
+    display: inline-block; background: #315cf6; color: white;
+    border-radius: 4px; padding: 6px 10px; font-weight: 800;
+    font-size: 12px; letter-spacing: 1px;
 }
 .title {
-    color: #211c16; text-align: center; font-size: 42px; font-weight: 800;
-    padding-top: 22px; padding-bottom: 10px;
+    color: #171a1f; font-size: 28px; font-weight: 750;
+    padding-top: 12px; padding-bottom: 5px;
 }
-.sub { text-align: center; color: #665847; font-size: 15px; padding-bottom: 8px; }
+.sub { color: #5f6977; font-size: 14px; line-height: 1.5; }
 .search {
-    background: #fffaf1; border: 1px solid #d5c4a6; border-radius: 8px;
-    padding: 18px 20px; margin: 24px 0 20px; color: #65553f;
-    font-size: 16px; box-shadow: 0 8px 22px rgba(63, 45, 20, 0.08);
+    background: #ffffff; border: 1px solid #d7dce3; border-radius: 6px;
+    padding: 12px 15px; margin: 0 0 12px; color: #566170;
+    font-size: 14px;
 }
-.search strong { color: #211c16; }
+.search strong { color: #20242a; }
 .hint {
-    display: block; color: #8b7960; font-size: 13px;
-    padding-top: 5px;
+    display: inline-block; color: #778291; font-size: 12px;
+    padding-left: 8px;
 }
 .section-title {
-    color: #665847; font-size: 12px; font-weight: 800;
-    padding-top: 18px; padding-bottom: 10px; text-transform: uppercase;
+    color: #5f6977; font-size: 11px; font-weight: 800;
+    padding: 10px 0 8px; text-transform: uppercase; letter-spacing: 1px;
 }
 .links { padding: 0; }
 .links a {
-    display: block; background: #fffaf1; border: 1px solid #d8c8ac;
-    border-radius: 7px; padding: 16px 18px; margin: 9px 0;
-    text-decoration: none; color: #315cf6; font-size: 15px; font-weight: 800;
+    display: inline-block; width: 43%; min-height: 42px; vertical-align: top;
+    background: #ffffff; border: 1px solid #d7dce3;
+    border-radius: 5px; padding: 10px 13px; margin: 0 8px 8px 0;
+    text-decoration: none; color: #294fbb; font-size: 14px; font-weight: 750;
 }
 .links span {
-    display: block; color: #74664f; font-size: 12px; font-weight: 500;
-    padding-top: 4px;
+    display: block; color: #778291; font-size: 11px; font-weight: 500;
+    padding-top: 3px;
 }
-.shortcuts {
-    background: #e6d6ba; border: 1px solid #d1bd99;
-    border-radius: 8px; padding: 14px 18px; margin-top: 20px;
+.info-panel {
+    background: #ffffff; border: 1px solid #d7dce3;
+    border-radius: 6px; padding: 12px 15px; margin-top: 7px;
 }
-.key { display: block; padding: 5px 0; color: #594b38; font-size: 13px; }
-.ft { padding-top: 24px; text-align: center; }
-.ft p { font-size: 12px; color: #74664f; }
-.tag { color: #315cf6; font-size: 12px; font-weight: 800; }
+.info-panel .section-title { padding-top: 0; }
+.note { display: block; padding: 3px 0; color: #566170; font-size: 12px; }
+.key { display: inline-block; width: 45%; padding: 3px 0; color: #566170; font-size: 12px; }
+.ft { padding-top: 14px; text-align: center; }
+.ft p { font-size: 11px; color: #7a8491; }
 </style>
 </head>
 <body>
@@ -200,17 +205,24 @@ body {
 </div>
 <div class="search"><strong>Ctrl+L</strong> - search or enter a URL<span class="hint">Try a site, open a quick link, or jump into history.</span></div>
 <div class="section-title">Quick links</div>
-<div class="links">
+<div class="links compact-links">
+<a href="https://example.com/">Example Domain<span>example.com</span></a>
 <a href="https://www.wikipedia.org/">Wikipedia<span>www.wikipedia.org</span></a>
 <a href="https://news.ycombinator.com">Hacker News<span>news.ycombinator.com</span></a>
-<a href="https://lite.cnn.com">CNN Lite<span>lite.cnn.com</span></a>
 <a href="vertex://history">History<span>vertex://history</span></a>
 <a href="vertex://bookmarks">Bookmarks<span>vertex://bookmarks</span></a>
 <a href="vertex://downloads">Downloads<span>vertex://downloads</span></a>
 <a href="vertex://settings">Settings<span>vertex://settings</span></a>
+<a href="vertex://offline-game">Recovery page<span>vertex://offline-game</span></a>
 </div>
-<div class="shortcuts">
-<div class="section-title" style="margin-top:0;">Shortcuts</div>
+<div class="info-panel">
+<div class="section-title">Engine status</div>
+<span class="note">Independent C++17 browser engine</span>
+<span class="note">HTML, CSS, JavaScript, layout, and rendering are under active development</span>
+<span class="note">Some modern and 3D-heavy sites may not render fully yet</span>
+</div>
+<div class="info-panel">
+<div class="section-title">Shortcuts</div>
 <span class="key">Ctrl+L - address bar</span>
 <span class="key">Ctrl+T / W - new / close tab</span>
 <span class="key">Ctrl+R - reload</span>
@@ -219,8 +231,7 @@ body {
 <span class="key">Alt+Left/Right - back / forward</span>
 </div>
 <div class="ft">
-<p><span class="tag">cross-platform</span></p>
-<p style="margin-top:6px;">No Chromium. No WebView. No shortcuts.</p>
+<p>Vertex internal start page · vertex://home</p>
 </div>
 </div>
 </body>

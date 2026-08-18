@@ -395,7 +395,19 @@ TestResult RunLayoutEngineTests() {
             + "\n";
         ExpectEqual("layout-engine/homepage-uses-embedded-styles",
             actual,
-            "wrapW=720 wrapX=140 markDisplay=1 linksDisplay=0\n",
+            "wrapW=820 wrapX=90 markDisplay=7 linksDisplay=0\n",
+            result);
+
+        const bool compactStartPage =
+            home.find("class=\"links compact-links\"") != std::string::npos
+            && home.find("href=\"https://example.com/\"") != std::string::npos
+            && home.find("href=\"https://news.ycombinator.com\"") != std::string::npos
+            && home.find("href=\"vertex://offline-game\"") != std::string::npos
+            && home.find("Engine status") != std::string::npos
+            && home.find("Some modern and 3D-heavy sites may not render fully yet") != std::string::npos;
+        ExpectEqual("layout-engine/homepage-has-compact-links-and-honest-status",
+            compactStartPage ? "compact\n" : "missing\n",
+            "compact\n",
             result);
     }
 
@@ -1594,10 +1606,14 @@ TestResult RunLayoutEngineTests() {
         auto* rocket = FindEngineBoxById(offlineLayout.get(), "rocket");
         auto* retry = FindEngineBoxById(offlineLayout.get(), "retry");
         auto* home = FindEngineBoxById(offlineLayout.get(), "home");
+        auto* obstacle = FindEngineBoxByClass(offlineLayout.get(), "obstacle-one");
         const bool usable = game && rocket && retry && home
             && game->contentW > 200.f && game->contentH > 100.f
             && retry->contentW > 0.f && retry->contentH > 0.f
-            && home->contentW > 0.f && home->contentH > 0.f;
+            && home->contentW > 0.f && home->contentH > 0.f
+            && retry->href == "vertex://offline-game"
+            && home->href == "vertex://home"
+            && obstacle;
         ExpectEqual("layout-engine/internal-offline-page-controls-are-visible",
             usable ? "visible\n" : "missing-or-collapsed\n",
             "visible\n",

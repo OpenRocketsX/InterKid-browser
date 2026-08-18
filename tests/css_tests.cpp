@@ -84,7 +84,7 @@ TestResult RunCssTests() {
             + "\n";
         ExpectEqual("css/homepage-stylesheet-applies",
             actual,
-            "rules=18 bodyBg=242,232,214 wrap=720 markDisplay=1 markBg=yes linkDisplay=1 linkBorder=yes\n",
+            "rules=19 bodyBg=244,246,248 wrap=auto markDisplay=7 markBg=yes linkDisplay=7 linkBorder=yes\n",
             result);
     }
 

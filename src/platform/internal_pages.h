@@ -61,26 +61,26 @@ inline std::string OfflinePageHtml(const std::string& failedUrl = {},
 <title>Page unavailable</title>
 <style>
 body {
-    margin: 0; padding: 24px 0 40px; background: #eef0f3; color: #20242a;
-    font-family: system-ui, sans-serif; font-size: 14px;
+    margin: 0; padding: 24px 0 36px; background: #f4f6f8; color: #20242a;
+    font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px;
 }
 .shell { width: 88%; max-width: 820px; margin-left: auto; margin-right: auto; }
 .panel {
-    background: #ffffff; border: 1px solid #c9ced6; border-radius: 6px;
-    padding: 20px; margin-bottom: 14px;
+    background: #ffffff; border: 1px solid #d7dce3; border-radius: 6px;
+    padding: 18px 20px; margin-bottom: 12px;
 }
 .section-label {
-    color: #596273; font-size: 11px; font-weight: 700; letter-spacing: 1px;
-    text-transform: uppercase; margin-bottom: 9px;
+    color: #5f6977; font-size: 11px; font-weight: 800; letter-spacing: 1px;
+    text-transform: uppercase; margin-bottom: 8px;
 }
 .status {
-    display: inline-block; padding: 4px 8px; margin-bottom: 12px;
-    border: 1px solid #b8c0cc; border-radius: 4px; background: #f3f5f8;
-    color: #424b59; font-size: 12px; font-weight: 700;
+    display: inline-block; padding: 4px 8px; margin-bottom: 10px;
+    border: 1px solid #c9d3e8; border-radius: 4px; background: #f1f5ff;
+    color: #294f9c; font-size: 12px; font-weight: 700;
 }
-h1 { margin: 0 0 6px; color: #171a1f; font-size: 26px; line-height: 1.2; }
+h1 { margin: 0 0 5px; color: #171a1f; font-size: 25px; line-height: 1.2; }
 .summary { margin: 0; color: #596273; line-height: 1.5; }
-.details { margin-top: 15px; padding-top: 9px; border-top: 1px solid #e0e3e8; }
+.details { margin-top: 13px; padding-top: 8px; border-top: 1px solid #e2e6eb; }
 .detail-row { padding: 5px 0; }
 .detail-row strong { display: inline-block; width: 70px; color: #596273; font-size: 12px; }
 .detail-row span { color: #303640; }
@@ -89,23 +89,23 @@ h1 { margin: 0 0 6px; color: #171a1f; font-size: 26px; line-height: 1.2; }
 .actions { margin-top: 16px; }
 .button {
     display: inline-block; min-width: 92px; margin-right: 8px; padding: 8px 13px;
-    border: 1px solid #aeb6c2; border-radius: 4px; background: #ffffff;
+    border: 1px solid #b9c1cc; border-radius: 4px; background: #ffffff;
     color: #273140; font-size: 13px; font-weight: 700; text-align: center;
     text-decoration: none;
 }
 .primary-button { background: #315cf6; border-color: #315cf6; color: #ffffff; }
-.game-header { margin-bottom: 10px; }
+.game-header { margin-bottom: 9px; }
 .game-title { display: inline-block; margin: 0 14px 0 0; font-size: 16px; }
-.score {
+.preview-label {
     display: inline-block; padding: 4px 7px; border: 1px solid #d3d7de;
     border-radius: 3px; background: #f5f6f8; color: #404958;
-    font-family: monospace; font-size: 12px; font-weight: 700;
+    font-size: 11px; font-weight: 700;
 }
 .game {
-    position: relative; height: 190px; overflow: hidden; border: 1px solid #aeb6c2;
-    border-radius: 4px; background: #edf1f6;
+    position: relative; height: 170px; overflow: hidden; border: 1px solid #b9c1cc;
+    border-radius: 4px; background: #eef2f6;
 }
-.guide { position: absolute; left: 0; right: 0; top: 55px; border-top: 1px solid #d1d6de; }
+.guide { position: absolute; left: 0; right: 0; top: 48px; border-top: 1px solid #d4dae2; }
 .ground {
     position: absolute; left: 0; right: 0; bottom: 0; height: 22px;
     background: #d9dee6; border-top: 2px solid #667181;
@@ -122,8 +122,10 @@ h1 { margin: 0 0 6px; color: #171a1f; font-size: 26px; line-height: 1.2; }
     position: absolute; bottom: 22px; width: 22px; background: #606b79;
     border: 2px solid #46505c; border-radius: 2px;
 }
+.obstacle-one { right: 118px; height: 34px; }
+.obstacle-two { right: 42px; height: 52px; }
 .game-message {
-    position: absolute; left: 20px; right: 20px; top: 73px; padding: 9px;
+    position: absolute; left: 20px; right: 20px; top: 68px; padding: 8px;
     border: 1px solid #c3c9d1; border-radius: 3px; background: #ffffff;
     color: #353c46; text-align: center; font-size: 12px;
 }
@@ -145,19 +147,19 @@ h1 { margin: 0 0 6px; color: #171a1f; font-size: 26px; line-height: 1.2; }
 </div>
 </section>
 <section class="panel">
-<div class="section-label">While you wait</div>
-<div class="game-header"><h2 class="game-title">Rocket Runner</h2><span id="score" class="score">Score 0000</span></div>
+<div class="section-label">Recovery panel</div>
+<div class="game-header"><h2 class="game-title">Rocket Runner</h2><span class="preview-label">Static preview</span></div>
 <div id="game" class="game" tabindex="0" aria-label="Rocket Runner game">
 <div class="guide"></div>
-<div id="obstacles"></div>
+<div id="obstacles"><span class="obstacle obstacle-one"></span><span class="obstacle obstacle-two"></span></div>
 <div id="rocket" class="rocket" aria-label="Rocket">
 <span class="rocket-flame"></span><span class="rocket-body"></span>
 <span class="rocket-nose"></span><span class="rocket-fin"></span>
 </div>
 <div class="ground"></div>
-<div id="game-message" class="game-message">Rocket Runner is paused while Vertex recovers this page.</div>
+<div id="game-message" class="game-message">Rocket Runner is paused in this stability build.</div>
 </div>
-<p class="hint">Retry the page or open Home to continue browsing.</p>
+<p class="hint">Interactive controls are disabled on recovery pages for stability.</p>
 </section>
 </main>
 </body>
