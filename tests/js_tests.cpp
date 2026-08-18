@@ -10,6 +10,7 @@
 #include "js/dom_bridge.h"
 #include "html/parser.h"
 #include "network/resource_cache.h"
+#include "platform/internal_pages.h"
 
 #include <chrono>
 #include <sstream>
@@ -132,6 +133,54 @@ static std::string RunDomCollectionSurvivesGcSnapshot() {
     Node* body = FindByTag(dom.get(), "body");
     return std::string(ok ? "ok:" : "fail:")
         + (body ? body->attr("data-result") : "missing-body") + "\n";
+}
+
+static std::string RunRocketRunnerFixedIdPatternSnapshot() {
+    auto dom = ParseHtml(vertex::internal_pages::RocketRunnerPageHtml());
+    JsEngine engine;
+    engine.setDocument(dom, []() {});
+    Node* script = FindByTag(dom.get(), "script");
+    if (!script) return "no script\n";
+
+    std::string source;
+    for (auto& child : script->children)
+        if (child->type == NodeType::Text) source += child->text;
+    if (!engine.runScript(source, "vertex://offline-game")) return "script failed\n";
+
+    Node* ship = FindById(dom.get(), "rr-ship");
+    Node* obstacle = FindById(dom.get(), "rr-obstacle");
+    Node* score = FindById(dom.get(), "rr-score");
+    Node* status = FindById(dom.get(), "rr-status");
+    Node* jump = FindById(dom.get(), "rr-jump");
+    Node* restart = FindById(dom.get(), "rr-restart");
+    if (!ship || !obstacle || !score || !status || !jump || !restart)
+        return "missing fixed id\n";
+
+    auto nodeText = [](Node* node) {
+        std::string text;
+        for (auto& child : node->children)
+            if (child->type == NodeType::Text) text += child->text;
+        return text;
+    };
+
+    for (int i = 0; i < 4; ++i) engine.runMacrotasks(1);
+    const std::string scoreAfterTick = nodeText(score);
+    engine.dispatchKeyDown(32, " ");
+    for (int i = 0; i < 4; ++i) engine.runMacrotasks(1);
+    const bool keyboardMovedShip = ship->attr("style").find("bottom: 34px") != std::string::npos;
+    engine.dispatchClick(restart, 0, 0);
+    const bool restarted = nodeText(score) == "Score 0"
+        && nodeText(status) == "Running"
+        && ship->attr("style").find("bottom: 24px") != std::string::npos
+        && obstacle->attr("style").find("left: 700px") != std::string::npos;
+    engine.dispatchClick(jump, 0, 0);
+    for (int i = 0; i < 4; ++i) engine.runMacrotasks(1);
+    const bool buttonMovedShip = ship->attr("style").find("bottom: 34px") != std::string::npos;
+    engine.dispatchKeyDown(82, "r");
+    const bool keyRestarted = nodeText(score) == "Score 0" && nodeText(status) == "Running";
+
+    return std::string(scoreAfterTick == "Score 1" && keyboardMovedShip
+                       && restarted && buttonMovedShip && keyRestarted ? "ok\n" : "fail\n");
 }
 
 static Node* FindById(Node* n, const std::string& id);
