@@ -1233,6 +1233,11 @@ static void OnButtonPress(uint8_t button, int x, int y) {
     if (g_layoutRoot) {
         Node* input = FormState::hitTestInput(*g_layoutRoot, (float)x, (float)contentY, CurTab().scrollY, 0);
         if (input) {
+            if (input->tagName == "button" && !FormState::isSubmitControl(input)) {
+                g_chrome.dispatchClick(input, x, contentY);
+                RequestRedraw();
+                return;
+            }
             if (FormState::isSubmitControl(input)) {
                 SubmitFormFromControl(input);
                 RequestRedraw();

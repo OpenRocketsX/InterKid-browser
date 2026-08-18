@@ -358,6 +358,10 @@ public:
         state.js.dispatchKeyDown(keyCode, key);
     }
 
+    void dispatchClick(Node* target, int x, int y) {
+        state.js.dispatchClick(target, x, y);
+    }
+
     void back() {
         Tab& tab = state.curTab();
         if (tab.histIdx > 0)

@@ -455,6 +455,11 @@ static Stylesheet CollectCSS(const Node* root) {
     if (g_layoutRoot && !g_tabs.empty()) {
         Node* input = FormState::hitTestInput(*g_layoutRoot, (float)pt.x, (float)pt.y, CurTab().scrollY, 0);
         if (input) {
+            if (input->tagName == "button" && !FormState::isSubmitControl(input)) {
+                g_chrome.dispatchClick(input, (int)pt.x, (int)pt.y);
+                [self setNeedsDisplay:YES];
+                return;
+            }
             if (FormState::isSubmitControl(input)) {
                 SubmitFormFromControl(input);
                 [self setNeedsDisplay:YES];

@@ -2734,6 +2734,11 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 Node* input = FormState::hitTestInput(*g_renderer.GetLayoutRoot(),
                     (float)px, (float)py, CurTab().scrollY, (float)ChromeTopInset());
                 if (input) {
+                    if (input->tagName == "button" && !FormState::isSubmitControl(input)) {
+                        g_chrome.dispatchClick(input, px, py);
+                        InvalidateContent();
+                        return 0;
+                    }
                     if (FormState::isSubmitControl(input)) {
                         SubmitFormFromControl(input);
                         return 0;

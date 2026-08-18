@@ -98,7 +98,8 @@ struct FormState {
         if (!n || n->type != NodeType::Element) return false;
         std::string type = n->attr("type");
         for (char& c : type) c = (char)std::tolower((unsigned char)c);
-        return n->tagName == "button" || (n->tagName == "input" && (type == "submit" || type == "image"));
+        return (n->tagName == "button" && (type.empty() || type == "submit"))
+            || (n->tagName == "input" && (type == "submit" || type == "image"));
     }
 
     // Find the enclosing <form> element and build a GET query string.
