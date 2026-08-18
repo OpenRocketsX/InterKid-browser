@@ -180,8 +180,14 @@ static std::string RunRocketRunnerFixedIdPatternSnapshot() {
     engine.dispatchKeyDown(82, "r");
     const bool keyRestarted = nodeText(score) == "Score 0" && nodeText(status) == "Running";
 
-    return std::string(scoreAfterTick == "Score 1" && keyboardMovedShip
-                       && restarted && buttonMovedShip && keyRestarted ? "ok\n" : "fail\n");
+    if (scoreAfterTick == "Score 1" && keyboardMovedShip
+        && restarted && buttonMovedShip && keyRestarted) return "ok\n";
+    return "score=" + scoreAfterTick + " ship=" + ship->attr("style")
+        + " obstacle=" + obstacle->attr("style") + " status=" + nodeText(status)
+        + " keyboard=" + std::to_string(keyboardMovedShip ? 1 : 0)
+        + " restart=" + std::to_string(restarted ? 1 : 0)
+        + " button=" + std::to_string(buttonMovedShip ? 1 : 0)
+        + " key-restart=" + std::to_string(keyRestarted ? 1 : 0) + "\n";
 }
 
 static std::string RunMediaElementApiSnapshot() {
