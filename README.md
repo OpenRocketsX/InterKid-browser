@@ -1,4 +1,4 @@
-# Vertex
+# Interkid-browser
 
 <p align="center">
   <img src="src/screenshot.png" alt="Vertex browser screenshot" width="860">
