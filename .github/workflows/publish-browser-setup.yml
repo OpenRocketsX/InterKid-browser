@@ -1,0 +1,105 @@
+name: Publish Browser Setup
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/publish-browser-setup.yml
+
+permissions:
+  contents: write
+
+env:
+  CARGO_NET_RETRY: 10
+  RELEASE_TAG: browser-latest
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install NSIS
+        run: choco install nsis -y
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust crates
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/vertex_arti
+
+      - name: Fetch Arti crates
+        shell: bash
+        run: |
+          for i in 1 2 3 4 5; do
+            cargo fetch --manifest-path third_party/vertex_arti/Cargo.toml && exit 0
+            sleep $((i * 10))
+          done
+          cargo fetch --manifest-path third_party/vertex_arti/Cargo.toml
+
+      - name: Configure Windows build
+        run: cmake -B build -A x64 -DVERTEX_BUILD_ARTI=ON
+
+      - name: Build Release
+        run: cmake --build build --config Release
+
+      - name: Run browser test suite
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tests = @('html','css','layout','paint','js','network','codec')
+          foreach ($test in $tests) {
+            & .\build\Release\vertex-tests.exe $test
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          & .\build\Release\vertex-layout-engine-tests.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build Windows installer
+        run: cmake --build build --config Release --target windows_installer
+
+      - name: Prepare Browser-Setup.exe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = Get-ChildItem -Path build -Filter 'Vertex-*.exe' -File | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if (-not $installer) { throw 'Windows installer was not produced.' }
+          Copy-Item $installer.FullName "$PWD\Browser-Setup.exe" -Force
+          $hash = (Get-FileHash "$PWD\Browser-Setup.exe" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  Browser-Setup.exe" | Set-Content -NoNewline -Encoding ascii "$PWD\Browser-Setup.exe.sha256"
+          Get-Item "$PWD\Browser-Setup.exe" | Format-List Name,Length,LastWriteTime
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Browser-Setup
+          path: |
+            Browser-Setup.exe
+            Browser-Setup.exe.sha256
+          if-no-files-found: error
+
+      - name: Publish stable GitHub Release asset
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" Browser-Setup.exe Browser-Setup.exe.sha256 --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$RELEASE_TAG" Browser-Setup.exe Browser-Setup.exe.sha256 \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "InterKid Browser — Windows Setup" \
+              --notes "Stable Windows installer download for InterKid Browser."
+          fi
+
+      - name: Print stable download URL
+        shell: bash
+        run: |
+          echo "https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/Browser-Setup.exe"
