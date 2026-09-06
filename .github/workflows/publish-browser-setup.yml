@@ -23,6 +23,29 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Apply Interkid Browser icon
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --quiet pillow
+          curl -fsSL \
+            https://raw.githubusercontent.com/OpenRocketsX/interkid.openrockets.com/main/assets/interkid-browser-icon.png \
+            -o interkid-browser-icon.png
+          python - <<'PY'
+          from PIL import Image
+          image = Image.open('interkid-browser-icon.png').convert('RGBA')
+          ratio = min(512 / image.width, 512 / image.height)
+          size = (round(image.width * ratio), round(image.height * ratio))
+          image = image.resize(size, Image.Resampling.LANCZOS)
+          canvas = Image.new('RGBA', (512, 512), (0, 0, 0, 0))
+          canvas.alpha_composite(image, ((512 - size[0]) // 2, (512 - size[1]) // 2))
+          ico_sizes = [(16,16), (24,24), (32,32), (48,48), (64,64), (128,128), (256,256)]
+          canvas.save('src/platform/vertex_icon.ico', sizes=ico_sizes)
+          canvas.save('src/platform/vertex_icon_light.ico', sizes=ico_sizes)
+          canvas.save('src/platform/vertex_icon.png', optimize=True)
+          canvas.save('src/platform/vertex_icon_light.png', optimize=True)
+          PY
+
       - name: Install NSIS
         run: choco install nsis -y
 
