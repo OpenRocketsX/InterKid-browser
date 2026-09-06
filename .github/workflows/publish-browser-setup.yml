@@ -29,7 +29,7 @@ jobs:
           set -euo pipefail
           python -m pip install --disable-pip-version-check --quiet pillow
           curl -fsSL \
-            https://raw.githubusercontent.com/OpenRocketsX/interkid.openrockets.com/main/assets/interkid-browser-icon.png \
+            https://raw.githubusercontent.com/OpenRocketsX/interkid.openrockets.com/214cbbf4fcdcb6ee07683a38f655954fa02f3b11/assets/interkid-browser-icon.png \
             -o interkid-browser-icon.png
           python - <<'PY'
           from PIL import Image
